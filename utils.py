@@ -96,6 +96,7 @@ def init_hparams():
     parser.add_argument("--ricap", type=float, default=0.3, help='the prob of RICAP, ricap<0 will close RICAP.')
     parser.add_argument("--beta", type=float, default=1.0, help='beta in ricap.')
     parser.add_argument('--use2019', action='store_true', help='use 2019 dataset')
+    parser.add_argument("--sampler", type=str, default="common", choices=['common', 'balance'], help='data sampler method')
 
     try:
         hparams = parser.parse_args()

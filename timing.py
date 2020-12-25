@@ -35,7 +35,7 @@ while(1):
 # print('单精度训练：\n', cmd)
 # os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b4_ns --lr 1e-4 --max_epochs 10 --train_batch_size 8 --precision 32 --weight_decay 1e-6 --onehot --version v33 --ricap -1 --mixup -1'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b4_ns --lr 1e-4 --max_epochs 20 --train_batch_size 8 --weight_decay 1e-6 --onehot --version v40-1 --ricap -1 --mixup -1 --smooth 0.7 --sampler balance'
 print(cmd)
 os.system(cmd)
 

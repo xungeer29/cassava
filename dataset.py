@@ -45,10 +45,11 @@ class PlantDataset(Dataset):
     """ Do normal training
     """
 
-    def __init__(self, data, soft_labels_filename=None, transforms=None, smooth=1.0):
+    def __init__(self, data, soft_labels_filename=None, transforms=None, smooth=1.0, sampler='common'):
         self.data = data
         self.transforms = transforms
         self.smooth = smooth
+        self.sampler = sampler
         if soft_labels_filename == "":
             print("soft_labels is None")
             self.soft_labels = None
@@ -66,26 +67,32 @@ class PlantDataset(Dataset):
         for name, label in zip(self.data.iloc[:, 0], self.data.iloc[:, 1:].values.astype(np.float)):
             id = np.argmax(label)
             self.id2names[id].append((name, label))
+        nums = []
         for id_, names in self.id2names.items():
             print(f'{id_}: {len(names)}')
+            nums.append(len(names))
+        W = sum(nums)/np.array(nums)
+        self.probs = W/np.sum(W)
+        if self.sampler == 'balance':
+            print(f'sampler prob: {self.probs}')
 
     def __getitem__(self, index):
         start_time = time()
-
         # commom sampler
-        # image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
-        # label = self.data.iloc[index, 1:].values.astype(np.float)
-
+        if self.sampler == 'common':
+            image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
+            label = self.data.iloc[index, 1:].values.astype(np.float)
         # balance sampler
-        prob = np.random.uniform()
-        if prob<0.2: id = 0
-        elif prob<0.4: id = 1
-        elif prob<0.6: id = 2
-        elif prob<0.8: id = 3
-        else: id = 4
-        name_label = random.choice(self.id2names[id])
-        image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, name_label[0])), cv2.COLOR_BGR2RGB)
-        label = name_label[1]
+        elif self.sampler == 'balance':
+            prob = np.random.uniform()
+            if prob<np.sum(self.probs[:1]): id = 0
+            elif prob<np.sum(self.probs[:2]): id = 1
+            elif prob<np.sum(self.probs[:3]): id = 2
+            elif prob<np.sum(self.probs[:4]): id = 3
+            else: id = 4
+            name_label = random.choice(self.id2names[id])
+            image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, name_label[0])), cv2.COLOR_BGR2RGB)
+            label = name_label[1]
 
         # Convert if not the right shape
         if image.shape != IMG_SHAPE:
@@ -166,11 +173,11 @@ def generate_transforms(image_size):
 def generate_dataloaders(hparams, train_data, val_data, transforms):
     train_dataset = PlantDataset(
         data=train_data, transforms=transforms["train_transforms"], soft_labels_filename=hparams.soft_labels_filename,
-        smooth=hparams.smooth
+        smooth=hparams.smooth, sampler=hparams.sampler
     )
     val_dataset = PlantDataset(
         data=val_data, transforms=transforms["val_transforms"], soft_labels_filename=hparams.soft_labels_filename,
-        smooth=hparams.smooth
+        smooth=hparams.smooth, sampler='common'
     )
     # sampler = WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset.weights))
     # sampler = BalanceClassSampler(train_dataset.labels, mode='downsampling')

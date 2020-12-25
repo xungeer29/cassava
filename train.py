@@ -54,11 +54,16 @@ class CoolSystem(pl.LightningModule):
                 for p in self.model.model.conv_stem.parameters(): p.requires_grad = grad
                 for p in self.model.model.bn1.parameters(): p.requires_grad = grad
                 for p in self.model.model.act1.parameters(): p.requires_grad = grad
-                # for p in self.model.model.blocks[:1].parameters(): p.requires_grad = grad
+                for p in self.model.model.blocks[:6].parameters(): p.requires_grad = grad
+                for p in self.model.model.conv_head.parameters(): p.requires_grad = grad
+                self.model.apply(fix_bn)
             elif 'regnet' in self.hparams.backbone:
                 for p in self.model.model.stem.parameters(): p.requires_grad = grad
-                # for p in self.model.model.s1.parameters(): p.requires_grad = grad
-                # for p in self.model.model.s2.parameters(): p.requires_grad = grad
+                for p in self.model.model.s1.parameters(): p.requires_grad = grad
+                for p in self.model.model.s2.parameters(): p.requires_grad = grad
+                for p in self.model.model.s3.parameters(): p.requires_grad = grad
+                for p in self.model.model.s3.parameters(): p.requires_grad = grad
+                self.model.apply(fix_bn)
             else:
                 raise NotImplementedError
         
@@ -231,7 +236,7 @@ if __name__ == "__main__":
 
     # Load data
     frac = 0.1 if hparams.version == 'debug' else 1.0
-    data, test_data = load_data(logger, frac=frac, hparams.use2019)
+    data, test_data = load_data(logger, frac=frac, use2019=hparams.use2019)
 
     # Generate transforms
     transforms = generate_transforms(hparams.image_size)
@@ -240,6 +245,12 @@ if __name__ == "__main__":
     valid_roc_auc_scores = []
     # folds = KFold(n_splits=5, shuffle=True, random_state=hparams.seed).split(data)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=hparams.seed).split(data, np.argmax(data.iloc[:, 1:].values, axis=-1))
+    ckpts = ['lightning_logs/v37/fold-0/fold=0-epoch=8-val_loss=1.1373-val_acc=0.8871.ckpt',
+             'lightning_logs/v37/fold-1/fold=1-epoch=7-val_loss=1.1399-val_acc=0.8860.ckpt',
+             'lightning_logs/v37/fold-2/fold=2-epoch=8-val_loss=1.1405-val_acc=0.8904.ckpt',
+             'lightning_logs/v37/fold-3/fold=3-epoch=5-val_loss=1.1391-val_acc=0.8878.ckpt',
+             'lightning_logs/v37/fold-4/fold=4-epoch=9-val_loss=1.1406-val_acc=0.8874.ckpt']
+
     for fold_i, (train_index, val_index) in enumerate(folds):
         ep_start = time()
         hparams.fold_i = fold_i
@@ -262,6 +273,9 @@ if __name__ == "__main__":
 
         # Instance Model, Trainer and train model
         model = CoolSystem(hparams)
+        # fine-tuning
+        # print(f'loading {ckpts[fold_i]}')
+        # model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
         trainer = pl.Trainer(
             gpus=hparams.gpus,
             min_epochs=5,
