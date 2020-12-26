@@ -45,11 +45,16 @@ class PlantDataset(Dataset):
     """ Do normal training
     """
 
-    def __init__(self, data, soft_labels_filename=None, transforms=None, smooth=1.0, sampler='common'):
+    def __init__(self, data, soft_labels_filename=None, transforms=None, smooth=1.0, sampler='common', use2019=False):
         self.data = data
         self.transforms = transforms
         self.smooth = smooth
         self.sampler = sampler
+
+        if use2019:
+            df_2019 = pd.read_csv('data/cassava/train_2019.csv')
+            self.data = pd.concat([self.data, df_2019], axis=0)
+
         if soft_labels_filename == "":
             print("soft_labels is None")
             self.soft_labels = None
@@ -147,7 +152,7 @@ def generate_transforms(image_size):
     #     ]
     # )
     train_transform = Compose([
-            RandomResizedCrop(int(image_size[1]), int(image_size[1])),
+            RandomResizedCrop(int(image_size[1]), int(image_size[1]), scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333)),
             Transpose(p=0.5),
             HorizontalFlip(p=0.5),
             VerticalFlip(p=0.5),
@@ -155,8 +160,8 @@ def generate_transforms(image_size):
             HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
             RandomBrightnessContrast(brightness_limit=(-0.1,0.1), contrast_limit=(-0.1, 0.1), p=0.5),
             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
-            CoarseDropout(p=0.5),
-            Cutout(p=0.5),
+            # CoarseDropout(p=0.5),
+            # Cutout(p=0.5),
             # ToTensorV2(p=1.0),
         ], p=1.)
 
@@ -173,11 +178,11 @@ def generate_transforms(image_size):
 def generate_dataloaders(hparams, train_data, val_data, transforms):
     train_dataset = PlantDataset(
         data=train_data, transforms=transforms["train_transforms"], soft_labels_filename=hparams.soft_labels_filename,
-        smooth=hparams.smooth, sampler=hparams.sampler
+        smooth=hparams.smooth, sampler=hparams.sampler, use2019=hparams.use2019
     )
     val_dataset = PlantDataset(
         data=val_data, transforms=transforms["val_transforms"], soft_labels_filename=hparams.soft_labels_filename,
-        smooth=hparams.smooth, sampler='common'
+        smooth=hparams.smooth, sampler='common', use2019=False
     )
     # sampler = WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset.weights))
     # sampler = BalanceClassSampler(train_dataset.labels, mode='downsampling')
@@ -202,7 +207,7 @@ def generate_dataloaders(hparams, train_data, val_data, transforms):
 
     return train_dataloader, val_dataloader
 
-def mixup_data(x, y, alpha=1.0):
+def mixup_data(x, y, alpha=0.2):
     '''Returns mixed inputs, pairs of targets, and lambda'''
     if alpha > 0:
         lam = np.random.beta(alpha, alpha)
@@ -217,13 +222,13 @@ def mixup_data(x, y, alpha=1.0):
 
     return mixed_x, y_a, y_b, lam
 
-def RICAP(input, target, ricap_beta=1.0):
+def RICAP(input, target, beta=1.0):
     '''
     Random Image Cropping And Patching
     '''
     I_x, I_y = input.size()[2:]
-    w = int(np.round(I_x * np.random.beta(ricap_beta, ricap_beta)))
-    h = int(np.round(I_y * np.random.beta(ricap_beta, ricap_beta)))
+    w = int(np.round(I_x * np.random.beta(beta, beta)))
+    h = int(np.round(I_y * np.random.beta(beta, beta)))
     w_ = [w, I_x - w, w, I_x - w]
     h_ = [h, h, I_y - h, I_y - h]
 
@@ -244,3 +249,35 @@ def RICAP(input, target, ricap_beta=1.0):
     3)
     
     return patched_images, c_, W_
+
+def cutmix(input, target, beta=1.0):
+    def rand_bbox(size, lam):
+        W = size[2]
+        H = size[3]
+        cut_rat = np.sqrt(1. - lam)
+        cut_w = np.int(W * cut_rat)
+        cut_h = np.int(H * cut_rat)
+
+        # uniform
+        cx = np.random.randint(W)
+        cy = np.random.randint(H)
+
+        bbx1 = np.clip(cx - cut_w // 2, 0, W)
+        bby1 = np.clip(cy - cut_h // 2, 0, H)
+        bbx2 = np.clip(cx + cut_w // 2, 0, W)
+        bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+        return bbx1, bby1, bbx2, bby2
+
+    # generate mixed sample
+    lam = np.random.beta(beta, beta)
+    device = input.device
+    rand_index = torch.randperm(input.size()[0]).to(device)
+    target_a = target
+    target_b = target[rand_index]
+    bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
+    input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
+    # adjust lambda to exactly match pixel ratio
+    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
+
+    return input, target_a, target_b, lam

@@ -4,6 +4,14 @@ import os
 import pynvml
 import torch
 
+t_s = time.time()
+hour = 5
+minute = 0
+second = 0
+while 1:
+    if time.time() - t_s > (hour*60+minute)*60+second:
+        break
+
 gpu_nums = torch.cuda.device_count()
 flag = 0
 while(1):
@@ -18,27 +26,24 @@ while(1):
             break
     if flag:
         break
-# cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b4_ns --lr 1e-4 --max_epochs 10 --train_batch_size 16 --precision 16 --weight_decay 1e-6 --version v14'
-# print('还原efficientnet：\n', cmd)
-# os.system(cmd)
 
-# cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b4_ns --lr 1e-4 --max_epochs 10 --train_batch_size 8 --precision 32 --weight_decay 1e-6 --version v15'
-# print('单精度训练：\n', cmd)
-# os.system(cmd)
-
-# cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone efficientnet_b0 --lr 1e-4 --max_epochs 10 --train_batch_size 20 --precision 32 --weight_decay 8e-4 --version v16'
-# print(cmd)
-# os.system(cmd)
-
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --precision 32 --weight_decay 1e-6 --version v18'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45 --ricap 0.5 --ricap_beta 0.2 --mixup 0 --cutmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --precision 32 --weight_decay 1e-5 --version v19'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-1 --ricap 0.5 --ricap_beta 0.4 --mixup 0 --cutmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --precision 32 --weight_decay 1e-4 --version v19'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-2 --ricap 0.5 --ricap_beta 0.6 --cutmix 0 --smooth 0.7 --sampler common'
+print(cmd)
+os.system(cmd)
+
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-3 --ricap 0.5 --ricap_beta 0.8 --cutmix 0 --smooth 0.7 --sampler common'
+print(cmd)
+os.system(cmd)
+
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-4 --ricap 0.5 --ricap_beta 1.0 --cutmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 

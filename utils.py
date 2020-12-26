@@ -90,11 +90,13 @@ def init_hparams():
     parser.add_argument("--weight_decay", type=float, default=8e-4)
     parser.add_argument('--freeze', action='store_true', help='freeze layers')
     parser.add_argument('--onehot', action='store_true', help='use onehot label')
-    parser.add_argument("--smooth", type=float, default=1.0, help='label smooth value, 1 is not using label_smooth.')
-    parser.add_argument("--mixup", type=float, default=0.3, help='the prob of mixup, mixup<0 will close mixup.')
-    parser.add_argument("--alpha", type=float, default=1.0, help='alpha in mixup.')
-    parser.add_argument("--ricap", type=float, default=0.3, help='the prob of RICAP, ricap<0 will close RICAP.')
-    parser.add_argument("--beta", type=float, default=1.0, help='beta in ricap.')
+    parser.add_argument("--smooth", type=float, default=1.0, help='label smooth value, 1 is not using label_smooth.') # 0.7
+    parser.add_argument("--mixup", type=float, default=0.3, help='the prob of mixup, mixup=0 will close mixup.')
+    parser.add_argument("--mixup_beta", type=float, default=0.4, help='beta in mixup.')
+    parser.add_argument("--ricap", type=float, default=0.3, help='the prob of RICAP, ricap=0 will close RICAP.')
+    parser.add_argument("--ricap_beta", type=float, default=0.2, help='beta in ricap.')
+    parser.add_argument("--cutmix", type=float, default=0.3, help='the prob of cutmix, cutmix=0 will close cutmix.')
+    parser.add_argument("--cutmix_beta", type=float, default=0.2, help='beta in cutmix.')
     parser.add_argument('--use2019', action='store_true', help='use 2019 dataset')
     parser.add_argument("--sampler", type=str, default="common", choices=['common', 'balance'], help='data sampler method')
 
@@ -115,11 +117,8 @@ def init_hparams():
     return hparams
 
 
-def load_data(logger, frac=1, use2019=False):
-    if use2019:
-        data, test_data = pd.read_csv("data/cassava/train_2019_2020.csv"), pd.read_csv("data/cassava/sample_submission.csv")
-    else:
-        data, test_data = pd.read_csv("data/cassava/train.csv"), pd.read_csv("data/cassava/sample_submission.csv")
+def load_data(logger, frac=1):
+    data, test_data = pd.read_csv("data/cassava/train.csv"), pd.read_csv("data/cassava/sample_submission.csv")
     # Do fast experiment
     if frac < 1:
         logger.info(f"use frac : {frac}")

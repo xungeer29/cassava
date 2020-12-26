@@ -17,6 +17,9 @@ class CrossEntropyLossOneHot(nn.Module):
 
     def forward(self, preds, labels):
         ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds), -1))
+        # w = [4, 2, 2, 0.4, 1.65]
+        # ws = [w for _ in range(preds.shape[0])]
+        # ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds)*torch.as_tensor(ws).to(preds.device), -1)) # weight loss
         loss = ce_loss
 
         # # from https://www.kaggle.com/c/cassava-leaf-disease-classification/discussion/203271

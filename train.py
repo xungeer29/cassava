@@ -14,7 +14,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 # Third party libraries
 import torch
-from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP
+from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP, cutmix
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, classification_report
 from sklearn.model_selection import KFold, StratifiedKFold
 
@@ -86,9 +86,11 @@ class CoolSystem(pl.LightningModule):
         images, labels, data_load_time = batch
         prob = np.random.uniform(0, 1)
         if prob < self.hparams.mixup:
-            images, labels_a, labels_b, lam = mixup_data(images, labels, self.hparams.alpha)
+            images, labels_a, labels_b, lam = mixup_data(images, labels, self.hparams.mixup_beta)
         elif prob < (self.hparams.mixup + self.hparams.ricap):
-            images, labels_, weights = RICAP(images, labels, ricap_beta=self.hparams.beta)
+            images, labels_, weights = RICAP(images, labels, beta=self.hparams.ricap_beta)
+        elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix):
+            images, labels_a, labels_b, lam = cutmix(images, labels, beta=self.hparams.cutmix_beta)
 
         scores = self(images)
 
@@ -98,6 +100,8 @@ class CoolSystem(pl.LightningModule):
             loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
         elif prob < (self.hparams.mixup + self.hparams.ricap):
             loss = sum([weights[k] * self.criterion(scores, labels_[k]) for k in range(4)])
+        elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix):
+            loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
         else:
             loss = self.criterion(scores, labels)
         # loss = self.criterion(scores, labels.squeeze(1).long())
@@ -236,7 +240,7 @@ if __name__ == "__main__":
 
     # Load data
     frac = 0.1 if hparams.version == 'debug' else 1.0
-    data, test_data = load_data(logger, frac=frac, use2019=hparams.use2019)
+    data, test_data = load_data(logger, frac=frac)
 
     # Generate transforms
     transforms = generate_transforms(hparams.image_size)
