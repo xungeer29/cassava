@@ -14,11 +14,11 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 # Third party libraries
 import torch
-from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP, cutmix
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, classification_report
 from sklearn.model_selection import KFold, StratifiedKFold
 
 # User defined libraries
+from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP, cutmix, FMix
 from models import CassavaModel, CassavaModelTimm, fix_bn
 from utils import init_hparams, init_logger, seed_reproducer, load_data
 from loss_function import CrossEntropyLossOneHot
@@ -39,6 +39,8 @@ class CoolSystem(pl.LightningModule):
         weight = torch.as_tensor([1., 1., 1., 1., 1.])
         # self.criterion = torch.nn.BCEWithLogitsLoss(weight=None, reduce=None, reduction='mean', pos_weight=weight)
         self.logger_kun = init_logger("kun_in", f'{hparams.log_dir}/{hparams.version}')
+        self.fmix = FMix(decay_power=3, alpha=self.hparams.fmix_beta, 
+                        size=(int(self.hparams.image_size[1]), self.hparams.image_size[1]), max_soft=0.0, reformulate=False)
 
     def forward(self, x):
         return self.model(x)
@@ -91,6 +93,10 @@ class CoolSystem(pl.LightningModule):
             images, labels_, weights = RICAP(images, labels, beta=self.hparams.ricap_beta)
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix):
             images, labels_a, labels_b, lam = cutmix(images, labels, beta=self.hparams.cutmix_beta)
+        elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix):
+            images, labels_a, labels_b, lam = self.fmix(images), labels, labels[self.fmix.index], self.fmix.lam
+        else:
+            pass
 
         scores = self(images)
 
@@ -101,6 +107,8 @@ class CoolSystem(pl.LightningModule):
         elif prob < (self.hparams.mixup + self.hparams.ricap):
             loss = sum([weights[k] * self.criterion(scores, labels_[k]) for k in range(4)])
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix):
+            loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
+        elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix):
             loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
         else:
             loss = self.criterion(scores, labels)

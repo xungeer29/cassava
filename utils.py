@@ -97,6 +97,8 @@ def init_hparams():
     parser.add_argument("--ricap_beta", type=float, default=0.2, help='beta in ricap.')
     parser.add_argument("--cutmix", type=float, default=0.3, help='the prob of cutmix, cutmix=0 will close cutmix.')
     parser.add_argument("--cutmix_beta", type=float, default=0.2, help='beta in cutmix.')
+    parser.add_argument("--fmix", type=float, default=0.3, help='the prob of fmix, fmix=0 will close fmix.')
+    parser.add_argument("--fmix_beta", type=float, default=0.2, help='beta in fmix.')
     parser.add_argument('--use2019', action='store_true', help='use 2019 dataset')
     parser.add_argument("--sampler", type=str, default="common", choices=['common', 'balance'], help='data sampler method')
 
