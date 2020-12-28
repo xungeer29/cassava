@@ -15,8 +15,12 @@ class CrossEntropyLossOneHot(nn.Module):
         super(CrossEntropyLossOneHot, self).__init__()
         self.log_softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, preds, labels):
-        ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds), -1))
+    def forward(self, preds, labels, snapmix=False):
+        if not snapmix:
+            ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds), -1))
+        else:
+            ce_loss = torch.sum(-labels * self.log_softmax(preds), -1)
+        # if reduction == 'sum':
         # w = [4, 2, 2, 0.4, 1.65]
         # ws = [w for _ in range(preds.shape[0])]
         # ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds)*torch.as_tensor(ws).to(preds.device), -1)) # weight loss

@@ -61,6 +61,7 @@ class CassavaModel(nn.Module):
 class CassavaModelTimm(nn.Module):
     def __init__(self, model_arch, n_class=5, pretrained=True):
         super().__init__()
+        self.model_arch = model_arch
         self.model = timm.create_model(model_arch, pretrained=pretrained)
         if 'efficientnet' in model_arch: # [efficientnet_b0-8, 'tf_efficientnet_b0-8, b0-8_ap, b0-8_ns, cc_b0_4e, b0_8e, b1_8e, el, em, es, l2_ns, l2_ns_475, lite0-4]
             n_features = self.model.classifier.in_features
@@ -90,9 +91,38 @@ class CassavaModelTimm(nn.Module):
             raise NotImplementedError
         
     def forward(self, x):
-        x = self.model(x)
-        # exit()
-        return x
+        if 'efficientnet' in self.model_arch:
+            x = self.model.conv_stem(x)
+            x = self.model.bn1(x)
+            x = self.model.act1(x)
+            x = self.model.blocks(x)
+            x = self.model.conv_head(x)
+            x = self.model.bn2(x)
+            fea_conv = x = self.model.act2(x)
+            x = self.model.global_pool(x)
+            x = self.model.classifier(x)
+        elif 'seresnext' in self.model_arch:
+            x = self.model.conv1(x)
+            x = self.model.bn1(x)
+            x = self.model.act1(x)
+            x = self.model.maxpool(x)
+            x = self.model.layer1(x)
+            x = self.model.layer2(x)
+            x = self.model.layer3(x)
+            fea_conv = x = self.model.layer4(x)
+            x = self.model.global_pool(x)
+            x = self.model.fc(x)
+        elif 'regnet' in self.model_arch:
+            x = self.model.stem(x)
+            x = self.model.s1(x)
+            x = self.model.s2(x)
+            x = self.model.s3(x)
+            fea_conv = x = self.model.s4(x)
+            x = self.model.head(x)
+            
+        # x = self.model(x)
+
+        return x, fea_conv
 
 def fix_bn(m):
     classname = m.__class__.__name__

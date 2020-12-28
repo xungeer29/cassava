@@ -5,7 +5,7 @@ import pynvml
 import torch
 
 t_s = time.time()
-hour = 5
+hour = 0
 minute = 0
 second = 0
 while 1:
@@ -27,23 +27,31 @@ while(1):
     if flag:
         break
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45 --ricap 0.5 --ricap_beta 0.2 --mixup 0 --cutmix 0 --smooth 0.7 --sampler common'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 0.2 --snapmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-1 --ricap 0.5 --ricap_beta 0.4 --mixup 0 --cutmix 0 --smooth 0.7 --sampler common'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47-1 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 0.4 --snapmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-2 --ricap 0.5 --ricap_beta 0.6 --cutmix 0 --smooth 0.7 --sampler common'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47-2 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 0.6 --snapmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-3 --ricap 0.5 --ricap_beta 0.8 --cutmix 0 --smooth 0.7 --sampler common'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47-3 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 0.8 --snapmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v45-4 --ricap 0.5 --ricap_beta 1.0 --cutmix 0 --smooth 0.7 --sampler common'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47-4 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 1.0 --snapmix 0 --smooth 0.7 --sampler common'
+print(cmd)
+os.system(cmd)
+
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47-5 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 1.2 --snapmix 0 --smooth 0.7 --sampler common'
+print(cmd)
+os.system(cmd)
+
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b0_ns --lr 1e-4 --max_epochs 10 --train_batch_size 20 --weight_decay 1e-6 --onehot --version v47-6 --ricap 0 --mixup 0 --cutmix 0 --fmix 0.5 --fmix_beta 1.4 --snapmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 

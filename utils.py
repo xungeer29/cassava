@@ -76,7 +76,7 @@ def init_hparams():
     parser.add_argument("-tbs", "--train_batch_size", type=int, default=32 * 1)
     parser.add_argument("-vbs", "--val_batch_size", type=int, default=32 * 1)
     parser.add_argument("--num_workers", type=int, default=4)
-    parser.add_argument("--image_size", nargs="+", default=[416, 512]) # 320, 416 512
+    parser.add_argument("--image_size", nargs="+", default=[512, 512]) # 320, 416 512
     parser.add_argument("--seed", type=int, default=2020)
     parser.add_argument("--max_epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-4)
@@ -99,6 +99,8 @@ def init_hparams():
     parser.add_argument("--cutmix_beta", type=float, default=0.2, help='beta in cutmix.')
     parser.add_argument("--fmix", type=float, default=0.3, help='the prob of fmix, fmix=0 will close fmix.')
     parser.add_argument("--fmix_beta", type=float, default=0.2, help='beta in fmix.')
+    parser.add_argument("--snapmix", type=float, default=0.3, help='the prob of snapmix, snapmix=0 will close snapmix.')
+    parser.add_argument("--snapmix_beta", type=float, default=0.2, help='beta in snapmix.')
     parser.add_argument('--use2019', action='store_true', help='use 2019 dataset')
     parser.add_argument("--sampler", type=str, default="common", choices=['common', 'balance'], help='data sampler method')
 

@@ -18,7 +18,7 @@ from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, classificat
 from sklearn.model_selection import KFold, StratifiedKFold
 
 # User defined libraries
-from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP, cutmix, FMix
+from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP, cutmix, FMix, snapmix
 from models import CassavaModel, CassavaModelTimm, fix_bn
 from utils import init_hparams, init_logger, seed_reproducer, load_data
 from loss_function import CrossEntropyLossOneHot
@@ -95,10 +95,12 @@ class CoolSystem(pl.LightningModule):
             images, labels_a, labels_b, lam = cutmix(images, labels, beta=self.hparams.cutmix_beta)
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix):
             images, labels_a, labels_b, lam = self.fmix(images), labels, labels[self.fmix.index], self.fmix.lam
+        elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix+self.hparams.snapmix):
+            images, labels_a, labels_b, lam_a, lam_b = snapmix(images, labels, self.hparams, model=self.model)
         else:
             pass
 
-        scores = self(images)
+        scores, _ = self(images)
 
         if not self.hparams.onehot: # onehot-->hardlabel for torch.nn.CrossEntropyLoss()
             labels = labels.topk(1, dim=1)[1].squeeze(1)
@@ -110,6 +112,8 @@ class CoolSystem(pl.LightningModule):
             loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix):
             loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
+        elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix+self.hparams.snapmix):
+            loss = torch.mean(lam_a * self.criterion(scores, labels_a, True) + lam_b * self.criterion(scores, labels_b, True))
         else:
             loss = self.criterion(scores, labels)
         # loss = self.criterion(scores, labels.squeeze(1).long())
@@ -175,7 +179,7 @@ class CoolSystem(pl.LightningModule):
         step_start_time = time()
         images, labels_ori, data_load_time = batch
         data_load_time = torch.sum(data_load_time)
-        scores = self(images)
+        scores, _ = self(images)
         # onehot-->hardlabel for torch.nn.CrossEntropyLoss()
         labels = labels_ori.topk(1, dim=1)[1].squeeze(1) if not self.hparams.onehot else labels_ori
         loss = self.criterion(scores, labels)
