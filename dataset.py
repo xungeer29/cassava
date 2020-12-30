@@ -156,7 +156,7 @@ def generate_transforms(image_size):
     #     ]
     # )
     train_transform = Compose([
-            RandomResizedCrop(int(image_size[1]), int(image_size[1]), scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333)),
+            RandomResizedCrop(int(image_size[0]), int(image_size[1]), scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333)),
             Transpose(p=0.5),
             HorizontalFlip(p=0.5),
             VerticalFlip(p=0.5),
@@ -171,7 +171,7 @@ def generate_transforms(image_size):
 
     val_transform = Compose(
         [
-            Resize(height=int(image_size[1]), width=int(image_size[1])),
+            Resize(height=int(image_size[0]), width=int(image_size[1])),
             Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0, p=1.0),
         ]
     )
@@ -254,7 +254,7 @@ def RICAP(input, target, beta=1.0):
     
     return patched_images, c_, W_
 
-def cutmix(input, target, beta=1.0):
+def cutmix(input, target, beta=1.0, asymmetric=False):
     def rand_bbox(size, lam):
         W = size[2]
         H = size[3]
@@ -275,18 +275,49 @@ def cutmix(input, target, beta=1.0):
 
     # generate mixed sample
     lam = np.random.beta(beta, beta)
-    device = input.device
-    rand_index = torch.randperm(input.size()[0]).to(device)
+    rand_index = torch.randperm(input.size()[0]).to(input.device)
     target_a = target
     target_b = target[rand_index]
     bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
-    input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
-    # adjust lambda to exactly match pixel ratio
-    lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
+    if asymmetric: # from https://github.com/Shaoli-Huang/SnapMix/blob/main/utils/mixmethod.py
+        bbx1_1, bby1_1, bbx2_1, bby2_1 = rand_bbox(input.size(), lam)
+        if (bby2_1-bby1_1)*(bbx2_1-bbx1_1) > 4 and (bby2-bby1)*(bbx2-bbx1)>4:
+            ncont = input[rand_index, :, bbx1_1:bbx2_1, bby1_1:bby2_1].clone()
+            ncont = F.interpolate(ncont, size=(bbx2-bbx1,bby2-bby1), mode='bilinear', align_corners=True)
+            input[:, :, bbx1:bbx2, bby1:bby2] = ncont
+            # adjust lambda to exactly match pixel ratio
+            lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
+    else:
+        input[:, :, bbx1:bbx2, bby1:bby2] = input[rand_index, :, bbx1:bbx2, bby1:bby2]
+        # adjust lambda to exactly match pixel ratio
+        lam = 1 - ((bbx2 - bbx1) * (bby2 - bby1) / (input.size()[-1] * input.size()[-2]))
 
     return input, target_a, target_b, lam
 
+def cutout(input,target, lam=0.75):
+    def rand_bbox(size, lam):
+        W = size[2]
+        H = size[3]
+        cut_rat = np.sqrt(1. - lam)
+        cut_w = np.int(W * cut_rat)
+        cut_h = np.int(H * cut_rat)
 
+        # uniform
+        cx = np.random.randint(W)
+        cy = np.random.randint(H)
+
+        bbx1 = np.clip(cx - cut_w // 2, 0, W)
+        bby1 = np.clip(cy - cut_h // 2, 0, H)
+        bbx2 = np.clip(cx + cut_w // 2, 0, W)
+        bby2 = np.clip(cy + cut_h // 2, 0, H)
+
+        return bbx1, bby1, bbx2, bby2
+
+    bs = input.size(0)
+    bbx1, bby1, bbx2, bby2 = rand_bbox(input.size(), lam)
+    input[:, :, bbx1:bbx2, bby1:bby2] = 0
+
+    return input, target, lam
 
 # fmix
 # from https://github.com/ecs-vlc/FMix

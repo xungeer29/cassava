@@ -39,7 +39,7 @@ class CoolSystem(pl.LightningModule):
         weight = torch.as_tensor([1., 1., 1., 1., 1.])
         # self.criterion = torch.nn.BCEWithLogitsLoss(weight=None, reduce=None, reduction='mean', pos_weight=weight)
         self.logger_kun = init_logger("kun_in", f'{hparams.log_dir}/{hparams.version}')
-        self.fmix = FMix(decay_power=3, alpha=self.hparams.fmix_beta, 
+        self.fmix = FMix(decay_power=self.hparams.fmix_delta, alpha=self.hparams.fmix_beta, 
                         size=(int(self.hparams.image_size[1]), self.hparams.image_size[1]), max_soft=0.0, reformulate=False)
 
     def forward(self, x):
@@ -235,6 +235,8 @@ class CoolSystem(pl.LightningModule):
         tb_logs = {'val/Loss': val_loss_mean, 'val/Accuracy': val_acc,
                     'val/Roc_Auc': val_roc_auc, 'val/F1': val_f1}
 
+        torch.save({'state_dict': self.model.state_dict()}, os.path.join(f'{hparams.log_dir}/{hparams.version}/fold-{fold_i}', f"fold={fold_i}-last.ckpt"))
+
         return {"val_loss": val_loss_mean, "val_roc_auc": val_roc_auc, "val_acc": val_acc, "val_f1": val_f1, 'log': tb_logs}
 
 
@@ -278,7 +280,7 @@ if __name__ == "__main__":
         # Define callbacks
         checkpoint_callback = ModelCheckpoint(
             monitor="val_acc",
-            save_top_k=2,
+            save_top_k=1,
             mode="max",
             filepath=os.path.join(f'{hparams.log_dir}/{hparams.version}/fold-{fold_i}', f"fold={fold_i}" + "-{epoch}-{val_loss:.4f}-{val_acc:.4f}"),
         )

@@ -89,8 +89,10 @@ def init_hparams():
     parser.add_argument("--version", type=str, default="debug")
     parser.add_argument("--weight_decay", type=float, default=8e-4)
     parser.add_argument('--freeze', action='store_true', help='freeze layers')
+
     parser.add_argument('--onehot', action='store_true', help='use onehot label')
-    parser.add_argument("--smooth", type=float, default=1.0, help='label smooth value, 1 is not using label_smooth.') # 0.7
+    parser.add_argument("--smooth", type=float, default=0.7, help='label smooth value, 1 is not using label_smooth.') # 0.7
+
     parser.add_argument("--mixup", type=float, default=0.3, help='the prob of mixup, mixup=0 will close mixup.')
     parser.add_argument("--mixup_beta", type=float, default=0.4, help='beta in mixup.')
     parser.add_argument("--ricap", type=float, default=0.3, help='the prob of RICAP, ricap=0 will close RICAP.')
@@ -98,9 +100,11 @@ def init_hparams():
     parser.add_argument("--cutmix", type=float, default=0.3, help='the prob of cutmix, cutmix=0 will close cutmix.')
     parser.add_argument("--cutmix_beta", type=float, default=0.2, help='beta in cutmix.')
     parser.add_argument("--fmix", type=float, default=0.3, help='the prob of fmix, fmix=0 will close fmix.')
-    parser.add_argument("--fmix_beta", type=float, default=0.2, help='beta in fmix.')
+    parser.add_argument("--fmix_beta", type=float, default=1.0, help='beta in fmix.')
+    parser.add_argument("--fmix_delta", type=float, default=3, help='decay power (delta) in fmix.') # 
     parser.add_argument("--snapmix", type=float, default=0.3, help='the prob of snapmix, snapmix=0 will close snapmix.')
-    parser.add_argument("--snapmix_beta", type=float, default=0.2, help='beta in snapmix.')
+    parser.add_argument("--snapmix_beta", type=float, default=5, help='beta in snapmix.')
+
     parser.add_argument('--use2019', action='store_true', help='use 2019 dataset')
     parser.add_argument("--sampler", type=str, default="common", choices=['common', 'balance'], help='data sampler method')
 
