@@ -95,11 +95,11 @@ def init_hparams():
 
     parser.add_argument("--mixup", type=float, default=0.3, help='the prob of mixup, mixup=0 will close mixup.')
     parser.add_argument("--mixup_beta", type=float, default=0.4, help='beta in mixup.')
-    parser.add_argument("--ricap", type=float, default=0.3, help='the prob of RICAP, ricap=0 will close RICAP.')
+    parser.add_argument("--ricap", type=float, default=0, help='the prob of RICAP, ricap=0 will close RICAP.')
     parser.add_argument("--ricap_beta", type=float, default=0.2, help='beta in ricap.')
     parser.add_argument("--cutmix", type=float, default=0.3, help='the prob of cutmix, cutmix=0 will close cutmix.')
-    parser.add_argument("--cutmix_beta", type=float, default=0.2, help='beta in cutmix.')
-    parser.add_argument("--fmix", type=float, default=0.3, help='the prob of fmix, fmix=0 will close fmix.')
+    parser.add_argument("--cutmix_beta", type=float, default=1.0, help='beta in cutmix.')
+    parser.add_argument("--fmix", type=float, default=0, help='the prob of fmix, fmix=0 will close fmix.')
     parser.add_argument("--fmix_beta", type=float, default=1.0, help='beta in fmix.')
     parser.add_argument("--fmix_delta", type=float, default=3, help='decay power (delta) in fmix.') # 
     parser.add_argument("--snapmix", type=float, default=0.3, help='the prob of snapmix, snapmix=0 will close snapmix.')

@@ -15,9 +15,15 @@ class CrossEntropyLossOneHot(nn.Module):
         super(CrossEntropyLossOneHot, self).__init__()
         self.log_softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, preds, labels, snapmix=False):
+    def forward(self, preds, labels, snapmix=False, ohem=False):
         if not snapmix:
-            ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds), -1))
+            if not ohem:
+                ce_loss = torch.mean(torch.sum(-labels * self.log_softmax(preds), -1))
+            else:
+                ce_loss = torch.sum(-labels * self.log_softmax(preds), -1)
+                ce_loss, idx = torch.sort(ce_loss, descending=True)
+                bs = preds.shape[0]
+                ce_loss = torch.mean(ce_loss[int(bs/4):int(bs/4*3)])
         else:
             ce_loss = torch.sum(-labels * self.log_softmax(preds), -1)
         # if reduction == 'sum':
@@ -33,6 +39,17 @@ class CrossEntropyLossOneHot(nn.Module):
 
         return loss
 
+def ohem_loss( rate, cls_pred, cls_target ):
+    batch_size = cls_pred.size(0) 
+    ohem_cls_loss = F.cross_entropy(cls_pred, cls_target, reduction='none', ignore_index=-1)
+
+    sorted_ohem_loss, idx = torch.sort(ohem_cls_loss, descending=True)
+    keep_num = min(sorted_ohem_loss.size()[0], int(batch_size*rate) )
+    if keep_num < sorted_ohem_loss.size()[0]:
+        keep_idx_cuda = idx[:keep_num]
+        ohem_cls_loss = ohem_cls_loss[keep_idx_cuda]
+    cls_loss = ohem_cls_loss.sum() / keep_num
+    return cls_loss
 
 class FocalCosineLoss(nn.Module):
     def __init__(self, alpha=1, gamma=2, xent=.1):

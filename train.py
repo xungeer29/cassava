@@ -8,6 +8,8 @@ import gc
 import math
 import numpy as np
 from time import time
+# https://github.com/jettify/pytorch-optimizer
+import torch_optimizer as optim
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -113,9 +115,10 @@ class CoolSystem(pl.LightningModule):
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix):
             loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix+self.hparams.snapmix):
-            loss = torch.mean(lam_a * self.criterion(scores, labels_a, True) + lam_b * self.criterion(scores, labels_b, True))
+            loss = torch.mean(lam_a * self.criterion(scores, labels_a, True) + lam_b * self.criterion(scores, labels_b, snapmix=True))
         else:
-            loss = self.criterion(scores, labels)
+            # ohem = True if self.current_epoch > 5 else False
+            loss = self.criterion(scores, labels, ohem=False)
         # loss = self.criterion(scores, labels.squeeze(1).long())
 
         data_load_time = torch.sum(data_load_time)
