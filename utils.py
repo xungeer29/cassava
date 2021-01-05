@@ -81,6 +81,7 @@ def init_hparams():
     parser.add_argument("--max_epochs", type=int, default=30)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--T_max", type=int, default=10)
+    parser.add_argument('--warmup', action='store_true', help='use warmup lr scheduler')
     parser.add_argument("--gpus", nargs="+", default=[0,])  # 输入1 2 3
     parser.add_argument("--precision", type=int, default=32) # 16 or 32
     parser.add_argument("--gradient_clip_val", type=float, default=1)

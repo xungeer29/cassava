@@ -212,12 +212,12 @@ def get_args():
                         help='Use NVIDIA GPU acceleration')
     parser.add_argument('--image_path', type=str, default='data/cassava/train_images/6103.jpg',
                         help='Input image path')
-    parser.add_argument('--backbone', type=str, default='se_resnext50_32x4d',
+    parser.add_argument('--backbone', type=str, default='tf_efficientnet_b0_ns',
                         help='backbone')
-    parser.add_argument('--weights', type=str, default='./lightning_logs/exp9/fold-0/fold=0-epoch=19-val_loss=0.3517-val_acc=0.8911.ckpt',
+    parser.add_argument('--weights', type=str, default='lightning_logs/v43/fold-0/fold=0-epoch=8-val_loss=1.1385-val_acc=0.8881.ckpt',
                         help='pretrained weight path')
     parser.add_argument('--width', type=int, default=512, help='image width')
-    parser.add_argument('--height', type=int, default=416, help='image height')
+    parser.add_argument('--height', type=int, default=512, help='image height')
 
     args = parser.parse_args()
     args.use_cuda = args.use_cuda and torch.cuda.is_available()
@@ -251,7 +251,7 @@ if __name__ == '__main__':
     # Can work with any model, but it assumes that the model has a
     # feature method, and a classifier method,
     # as in the VGG models in torchvision.
-    model = models.resnet50(pretrained=True)
+    # model = models.resnet50(pretrained=True)
     model = CassavaModel(args.backbone) if args.backbone == 'se_resnext50_32x4d' else CassavaModelTimm(args.backbone)
     print(model)
     # load pretrained models
@@ -263,9 +263,12 @@ if __name__ == '__main__':
             new_state_dict[name] = v 
         model.load_state_dict(new_state_dict)
     else:
-        state_dict = torch.load(args.weights, map_location='cpu')
-        print([k for k,v in state_dict.items()])
-        model.load_state_dict(state_dict)
+        state_dict = torch.load(args.weights, map_location='cpu')["state_dict"]
+        new_state_dict = OrderedDict()
+        for k, v in state_dict.items():
+            name = k[6:]
+            new_state_dict[name] = v 
+        model.load_state_dict(new_state_dict)
 
     grad_cam = GradCam(model=model, feature_module=model.model.conv_head, \
                        target_layer_names=["2"], use_cuda=args.use_cuda)

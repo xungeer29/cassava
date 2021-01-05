@@ -24,7 +24,7 @@ from dataset import generate_transforms, generate_dataloaders, mixup_data, RICAP
 from models import CassavaModel, CassavaModelTimm, fix_bn
 from utils import init_hparams, init_logger, seed_reproducer, load_data
 from loss_function import CrossEntropyLossOneHot
-from lrs_scheduler import WarmRestart, warm_restart
+from lrs_scheduler import WarmRestart, warm_restart, GradualWarmupScheduler
 
 
 class CoolSystem(pl.LightningModule):
@@ -74,16 +74,35 @@ class CoolSystem(pl.LightningModule):
         freezed = [name for name, p in self.model.named_parameters() if not p.requires_grad]
         print(f'Those layers are freezed: {freezed}' if len(freezed) > 0 else 'no layers was freezed.')
 
-        # self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
-        self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
+        lr_scale = 100 if self.hparams.warmup else 1
+        # self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr/lr_scale, betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
+        self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
                                     betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
-        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
+        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
         #                     momentum=0.9, dampening=0, nesterov=False, weight_decay=self.hparams.weight_decay) # [0.5,0.9,0.95,0.99]
         # self.scheduler = WarmRestart(self.optimizer, T_max=self.hparams.T_max, T_mult=1, eta_min=1e-6)
         self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
-                                T_0=self.hparams.T_max, T_mult=1, eta_min=1e-6, last_epoch=-1)
+                                T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
+        if self.hparams.warmup:
+            self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=lr_scale, 
+                                            total_epoch=len(self.train_dataloader.dataloader), after_scheduler=self.scheduler)
         
-        return [self.optimizer], [self.scheduler]
+        return [self.optimizer], [{'scheduler': self.scheduler, 'interval': 'step'}]
+
+    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx, second_order_closure=None):
+        # warm up lr
+        if self.trainer.global_step < len(self.train_dataloader.dataloader):
+            lr_scale = min(1., float(self.trainer.global_step + 1) / len(self.train_dataloader.dataloader))
+            for pg in optimizer.param_groups:
+                pg['lr'] = lr_scale * self.hparams.lr
+
+        if isinstance(optimizer, torch.optim.LBFGS):
+            optimizer.step(second_order_closure)
+        else:
+            optimizer.step()
+
+        # clear gradients
+        optimizer.zero_grad()
 
     def training_step(self, batch, batch_idx):
         step_start_time = time()
@@ -117,7 +136,7 @@ class CoolSystem(pl.LightningModule):
         elif prob < (self.hparams.mixup + self.hparams.ricap + self.hparams.cutmix+ self.hparams.fmix+self.hparams.snapmix):
             loss = torch.mean(lam_a * self.criterion(scores, labels_a, True) + lam_b * self.criterion(scores, labels_b, snapmix=True))
         else:
-            # ohem = True if self.current_epoch > 5 else False
+            ohem = True if self.current_epoch > 5 else False
             loss = self.criterion(scores, labels, ohem=False)
         # loss = self.criterion(scores, labels.squeeze(1).long())
 
@@ -132,7 +151,8 @@ class CoolSystem(pl.LightningModule):
         train_acc = accuracy_score(true, pred)
         train_f1 = f1_score(true, pred, average='weighted') # average=[None, ‘binary’ (default), ‘micro’, ‘macro’, ‘samples’, ‘weighted’]
 
-        tb_logs = {'lr': self.scheduler.get_lr()[0]}
+        # tb_logs = {'lr': self.scheduler.get_lr()[0]}
+        tb_logs = {'lr': self.optimizer.param_groups[0]['lr']}
 
         return {
             "loss": loss,
@@ -266,11 +286,11 @@ if __name__ == "__main__":
     valid_roc_auc_scores = []
     # folds = KFold(n_splits=5, shuffle=True, random_state=hparams.seed).split(data)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=hparams.seed).split(data, np.argmax(data.iloc[:, 1:].values, axis=-1))
-    ckpts = ['lightning_logs/v37/fold-0/fold=0-epoch=8-val_loss=1.1373-val_acc=0.8871.ckpt',
-             'lightning_logs/v37/fold-1/fold=1-epoch=7-val_loss=1.1399-val_acc=0.8860.ckpt',
-             'lightning_logs/v37/fold-2/fold=2-epoch=8-val_loss=1.1405-val_acc=0.8904.ckpt',
-             'lightning_logs/v37/fold-3/fold=3-epoch=5-val_loss=1.1391-val_acc=0.8878.ckpt',
-             'lightning_logs/v37/fold-4/fold=4-epoch=9-val_loss=1.1406-val_acc=0.8874.ckpt']
+    ckpts = ['lightning_logs/v55-256/fold-0/fold=0-last.ckpt',
+             'lightning_logs/v55-256/fold-1/fold=1-last.ckpt',
+             'lightning_logs/v55-256/fold-2/fold=2-last.ckpt',
+             'lightning_logs/v55-256/fold-3/fold=3-last.ckpt',
+             'lightning_logs/v55-256/fold-4/fold=4-last.ckpt']
 
     for fold_i, (train_index, val_index) in enumerate(folds):
         ep_start = time()
@@ -294,9 +314,10 @@ if __name__ == "__main__":
 
         # Instance Model, Trainer and train model
         model = CoolSystem(hparams)
+        # print(model.train_dataloader);exit()
         # fine-tuning
         # print(f'loading {ckpts[fold_i]}')
-        # model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
+        # model.model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
         trainer = pl.Trainer(
             gpus=hparams.gpus,
             min_epochs=5,
@@ -311,7 +332,7 @@ if __name__ == "__main__":
             use_dp=True if len(hparams.gpus)>1 else False,
             gradient_clip_val=hparams.gradient_clip_val,
             logger=tb_logger,
-            accumulate_grad_batches=round(32/hparams.train_batch_size),
+            accumulate_grad_batches=max(1, round(32/hparams.train_batch_size)),
         )
         trainer.fit(model, train_dataloader, val_dataloader)
 
