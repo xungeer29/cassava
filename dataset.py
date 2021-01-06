@@ -82,6 +82,7 @@ class PlantDataset(Dataset):
             nums.append(len(names))
         W = sum(nums)/np.array(nums)
         self.probs = W/np.sum(W)
+        self.probs = [0.3, 0.2, 0.2, 0.1, 0.2]
         if self.sampler == 'balance':
             print(f'sampler prob: {self.probs}')
 
@@ -164,8 +165,8 @@ def generate_transforms(image_size):
             HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
             RandomBrightnessContrast(brightness_limit=(-0.1,0.1), contrast_limit=(-0.1, 0.1), p=0.5),
             Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
-            # CoarseDropout(p=0.5),
-            # Cutout(p=0.5),
+            CoarseDropout(p=0.5),
+            Cutout(p=0.5),
             # ToTensorV2(p=1.0),
         ], p=1.)
 

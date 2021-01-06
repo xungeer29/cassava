@@ -75,34 +75,21 @@ class CoolSystem(pl.LightningModule):
         print(f'Those layers are freezed: {freezed}' if len(freezed) > 0 else 'no layers was freezed.')
 
         lr_scale = 100 if self.hparams.warmup else 1
-        # self.optimizer = torch.optim.Adam(self.parameters(), lr=self.hparams.lr/lr_scale, betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
         self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
                                     betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
+        # self.optimizer = optim.RAdam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
+        #                             betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
         # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
         #                     momentum=0.9, dampening=0, nesterov=False, weight_decay=self.hparams.weight_decay) # [0.5,0.9,0.95,0.99]
         # self.scheduler = WarmRestart(self.optimizer, T_max=self.hparams.T_max, T_mult=1, eta_min=1e-6)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
-                                T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
+        # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
+        #                         T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10*len(self.train_dataloader.dataloader), gamma=0.1, last_epoch=-1)
         if self.hparams.warmup:
             self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=lr_scale, 
                                             total_epoch=len(self.train_dataloader.dataloader), after_scheduler=self.scheduler)
         
         return [self.optimizer], [{'scheduler': self.scheduler, 'interval': 'step'}]
-
-    def optimizer_step(self, epoch, batch_idx, optimizer, optimizer_idx, second_order_closure=None):
-        # warm up lr
-        if self.trainer.global_step < len(self.train_dataloader.dataloader):
-            lr_scale = min(1., float(self.trainer.global_step + 1) / len(self.train_dataloader.dataloader))
-            for pg in optimizer.param_groups:
-                pg['lr'] = lr_scale * self.hparams.lr
-
-        if isinstance(optimizer, torch.optim.LBFGS):
-            optimizer.step(second_order_closure)
-        else:
-            optimizer.step()
-
-        # clear gradients
-        optimizer.zero_grad()
 
     def training_step(self, batch, batch_idx):
         step_start_time = time()
@@ -286,11 +273,11 @@ if __name__ == "__main__":
     valid_roc_auc_scores = []
     # folds = KFold(n_splits=5, shuffle=True, random_state=hparams.seed).split(data)
     folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=hparams.seed).split(data, np.argmax(data.iloc[:, 1:].values, axis=-1))
-    ckpts = ['lightning_logs/v55-256/fold-0/fold=0-last.ckpt',
-             'lightning_logs/v55-256/fold-1/fold=1-last.ckpt',
-             'lightning_logs/v55-256/fold-2/fold=2-last.ckpt',
-             'lightning_logs/v55-256/fold-3/fold=3-last.ckpt',
-             'lightning_logs/v55-256/fold-4/fold=4-last.ckpt']
+    ckpts = ['lightning_logs/v55-384/fold-0/fold=0-last.ckpt',
+             'lightning_logs/v55-384/fold-1/fold=1-last.ckpt',
+             'lightning_logs/v55-384/fold-2/fold=2-last.ckpt',
+             'lightning_logs/v55-384/fold-3/fold=3-last.ckpt',
+             'lightning_logs/v55-384/fold-4/fold=4-last.ckpt']
 
     for fold_i, (train_index, val_index) in enumerate(folds):
         ep_start = time()
@@ -316,8 +303,8 @@ if __name__ == "__main__":
         model = CoolSystem(hparams)
         # print(model.train_dataloader);exit()
         # fine-tuning
-        # print(f'loading {ckpts[fold_i]}')
-        # model.model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
+        print(f'loading {ckpts[fold_i]}')
+        model.model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
         trainer = pl.Trainer(
             gpus=hparams.gpus,
             min_epochs=5,
