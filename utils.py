@@ -75,6 +75,7 @@ def init_hparams():
     parser.add_argument("-backbone", "--backbone", type=str, default="se_resnext50_32x4d") # efficientnet-b1, se_resnet50
     parser.add_argument("-tbs", "--train_batch_size", type=int, default=32 * 1)
     parser.add_argument("-vbs", "--val_batch_size", type=int, default=32 * 1)
+    parser.add_argument("--fold", type=int, default=5)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--image_size", nargs="+", default=[512, 512]) # 320, 416 512
     parser.add_argument("--seed", type=int, default=2020)
