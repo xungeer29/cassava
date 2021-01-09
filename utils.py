@@ -79,22 +79,40 @@ def init_hparams():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--image_size", nargs="+", default=[512, 512]) # 320, 416 512
     parser.add_argument("--seed", type=int, default=2020)
-    parser.add_argument("--max_epochs", type=int, default=30)
-    parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--T_max", type=int, default=10)
-    parser.add_argument('--warmup', action='store_true', help='use warmup lr scheduler')
+    
     parser.add_argument("--gpus", nargs="+", default=[0,])  # 输入1 2 3
     parser.add_argument("--precision", type=int, default=32) # 16 or 32
     parser.add_argument("--gradient_clip_val", type=float, default=1)
     parser.add_argument("--soft_labels_filename", type=str, default="")
     parser.add_argument("--log_dir", type=str, default="lightning_logs")
     parser.add_argument("--version", type=str, default="debug")
-    parser.add_argument("--weight_decay", type=float, default=8e-4)
     parser.add_argument('--freeze', action='store_true', help='freeze layers')
+
+    # Optimizer parameters
+    parser.add_argument('--opt', default='sgd', type=str, metavar='OPTIMIZER', help='Optimizer (default: "sgd"')
+    parser.add_argument('--opt-eps', default=None, type=float, metavar='EPSILON', help='Optimizer Epsilon (default: None, use opt default)')
+    parser.add_argument('--opt-betas', default=None, type=float, nargs='+', metavar='BETA', help='Optimizer Betas (default: None, use opt default)')
+    parser.add_argument('--momentum', type=float, default=0.9, metavar='M', help='Optimizer momentum (default: 0.9)')
+    parser.add_argument('--weight-decay', type=float, default=0.0001, help='weight decay (default: 0.0001)')
+    parser.add_argument('--clip-grad', type=float, default=None, metavar='NORM', help='Clip gradient norm (default: None, no clipping)')
+
+    # Learning rate schedule parameters
+    parser.add_argument('--epochs', type=int, default=30, metavar='N', help='number of epochs to train (default: 2)')
+
+    parser.add_argument('--sched', default='step', type=str, metavar='SCHEDULER', help='LR scheduler (default: "step"')
+    parser.add_argument('--lr', type=float, default=0.03, metavar='LR', help='learning rate (default: 0.01)') # 1e-4
+    parser.add_argument('--warmup-lr', type=float, default=0.0001, metavar='LR', help='warmup learning rate (default: 0.0001)')
+    parser.add_argument('--min-lr', type=float, default=1e-5, metavar='LR', help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
+    parser.add_argument('--warmup-epochs', type=int, default=3, metavar='N', help='epochs to warmup LR, if scheduler supports')
+    parser.add_argument('--patience-epochs', type=int, default=10, metavar='N', help='patience epochs for Plateau LR scheduler (default: 10')
+    parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RATE', help='LR decay rate (default: 0.1)')
+    parser.add_argument("--T_max", type=int, default=10)
+    parser.add_argument('--warmup', action='store_true', help='use warmup lr scheduler')
 
     parser.add_argument('--onehot', action='store_true', help='use onehot label')
     parser.add_argument("--smooth", type=float, default=0.7, help='label smooth value, 1 is not using label_smooth.') # 0.7
 
+    # data augmentations
     parser.add_argument("--mixup", type=float, default=0.3, help='the prob of mixup, mixup=0 will close mixup.')
     parser.add_argument("--mixup_beta", type=float, default=0.4, help='beta in mixup.')
     parser.add_argument("--ricap", type=float, default=0, help='the prob of RICAP, ricap=0 will close RICAP.')

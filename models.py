@@ -87,6 +87,9 @@ class CassavaModelTimm(nn.Module):
             #     #nn.Linear(n_features, hidden_size,bias=True), nn.ELU(),
             #     nn.Linear(n_features, n_class, bias=True)
             # )
+        elif 'vit' in model_arch: # [vit_base_patch16_384, ]
+            n_features = self.model.head.in_features
+            self.model.head = nn.Linear(n_features, n_class)
         else:
             raise NotImplementedError
         
@@ -119,8 +122,8 @@ class CassavaModelTimm(nn.Module):
             x = self.model.s3(x)
             fea_conv = x = self.model.s4(x)
             x = self.model.head(x)
-            
-        # x = self.model(x)
+        elif 'vit' in self.model_arch:
+            fea_conv = x = self.model(x)
 
         return x, fea_conv
 
@@ -130,6 +133,8 @@ def fix_bn(m):
         m.eval()
 
 if __name__ == '__main__':
-    model = CassavaModel_('regnety_064', pretrained=True)
+    x = torch.rand((2, 3, 384, 384))
+    model = CassavaModelTimm('vit_base_patch16_384', pretrained=True) # vit_base_patch16_384
     print(model)
-    print(dir(timm.models))
+    out = model(x)
+    print(out[0].shape, out[1].shape)

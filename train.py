@@ -14,7 +14,9 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 
-# Third party libraries
+from timm.optim import create_optimizer
+from timm.scheduler import create_scheduler
+
 import torch
 from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, classification_report
 from sklearn.model_selection import KFold, StratifiedKFold
@@ -51,7 +53,7 @@ class CoolSystem(pl.LightningModule):
         # freeze layer
         # self.model.apply(fix_bn)
         if self.hparams.freeze:
-            grad = False if self.current_epoch < self.hparams.max_epochs/2 else True
+            grad = False if self.current_epoch < self.hparams.epochs/2 else True
             if self.hparams.backbone == 'se_resnext50_32x4d':
                 for p in self.model.model_ft[:2].parameters(): p.requires_grad = grad # 1：(conv1,bn1,relu1,pool) 2,3
             elif 'efficientnet' in self.hparams.backbone:
@@ -74,24 +76,23 @@ class CoolSystem(pl.LightningModule):
         freezed = [name for name, p in self.model.named_parameters() if not p.requires_grad]
         print(f'Those layers are freezed: {freezed}' if len(freezed) > 0 else 'no layers was freezed.')
 
-        lr_scale = 100 if self.hparams.warmup else 1
-        # self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
+        lr_scale = self.hparams.lr / self.hparams.warmup_lr if self.hparams.warmup else 1
+        self.hparams.lr /= lr_scale
+        self.optimizer = create_optimizer(self.hparams, self.model)
+        # self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
         #                             betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
-        # self.optimizer = optim.RAdam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
-        #                             betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
-        self.optimizer = optim.SGDP(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
-                                    momentum=0, dampening=0, delta=0.1, wd_ratio=0.1, weight_decay=self.hparams.weight_decay)
-        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr/lr_scale, 
-        #                     momentum=0.9, dampening=0, nesterov=False, weight_decay=self.hparams.weight_decay) # [0.5,0.9,0.95,0.99]
+        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
+        #                             momentum=0.9, nesterov=True eps=1e-08, weight_decay=self.hparams.weight_decay)
         # self.scheduler = WarmRestart(self.optimizer, T_max=self.hparams.T_max, T_mult=1, eta_min=1e-6)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
-                                T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
-        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10*len(self.train_dataloader.dataloader), gamma=0.1, last_epoch=-1)
+        # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
+        #                         T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
+        # self.scheduler, num_epochs = create_scheduler(self.hparams, self.optimizer)
+        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10*len(self.train_dataloader.dataloader), gamma=0.1, last_epoch=-1)
         if self.hparams.warmup:
             self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=lr_scale, 
                                             total_epoch=len(self.train_dataloader.dataloader)*1, after_scheduler=self.scheduler)
         
-        return [self.optimizer], [{'scheduler': self.scheduler, 'interval': 'step'}]
+        return [self.optimizer], [{'scheduler': self.scheduler, 'interval': 'step'}] # step
 
     def training_step(self, batch, batch_idx):
         step_start_time = time()
@@ -140,7 +141,6 @@ class CoolSystem(pl.LightningModule):
         train_acc = accuracy_score(true, pred)
         train_f1 = f1_score(true, pred, average='weighted') # average=[None, ‘binary’ (default), ‘micro’, ‘macro’, ‘samples’, ‘weighted’]
 
-        # tb_logs = {'lr': self.scheduler.get_lr()[0]}
         tb_logs = {'lr': self.optimizer.param_groups[0]['lr']}
 
         return {
@@ -164,16 +164,16 @@ class CoolSystem(pl.LightningModule):
         train_f1 = np.mean([output["train_f1"] for output in outputs])
 
         self.current_epoch += 1
-        # if self.current_epoch < (self.trainer.max_epochs - 4):
+        # if self.current_epoch < (self.trainer.epochs - 4):
         #     self.scheduler = warm_restart(self.scheduler, T_mult=2)
 
         # unfreeze layers
-        # if self.current_epoch == (self.trainer.max_epochs//self.hparams.T_max-1)*self.hparams.T_max and self.hparams.freeze:
+        # if self.current_epoch == (self.trainer.epochs//self.hparams.T_max-1)*self.hparams.T_max and self.hparams.freeze:
         #     self.configure_optimizers()
 
         self.logger_kun.info(
             f"{self.hparams.fold_i}-{self.current_epoch-1} | "
-            f"lr : {self.scheduler.get_lr()[0]:.6f} | "
+            f"lr : {self.optimizer.param_groups[0]['lr']:.6f} | "
             f"train_loss : {train_loss_mean:.4f} | "
             # f"train_roc_auc : {train_roc_auc:.4f} | "
             f"train_acc : {train_acc:.4f} | "
@@ -231,7 +231,7 @@ class CoolSystem(pl.LightningModule):
         # terminal logs
         self.logger_kun.info(
             f"{self.hparams.fold_i}-{self.current_epoch} | "
-            f"lr : {self.scheduler.get_lr()[0]:.6f} | "
+            f"lr : {self.optimizer.param_groups[0]['lr']:.6f} | "
             f"val_loss : {val_loss_mean:.4f} | "
             f"val_acc : {val_acc:.4f} | "
             f"val_f1 : {val_f1:.4f} | "
@@ -310,7 +310,7 @@ if __name__ == "__main__":
         trainer = pl.Trainer(
             gpus=hparams.gpus,
             min_epochs=5,
-            max_epochs=hparams.max_epochs,
+            max_epochs=hparams.epochs,
             early_stop_callback=early_stop_callback,
             checkpoint_callback=checkpoint_callback,
             progress_bar_refresh_rate=0,
