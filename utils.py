@@ -98,7 +98,6 @@ def init_hparams():
 
     # Learning rate schedule parameters
     parser.add_argument('--epochs', type=int, default=30, metavar='N', help='number of epochs to train (default: 2)')
-
     parser.add_argument('--sched', default='step', type=str, metavar='SCHEDULER', help='LR scheduler (default: "step"')
     parser.add_argument('--lr', type=float, default=0.03, metavar='LR', help='learning rate (default: 0.01)') # 1e-4
     parser.add_argument('--warmup-lr', type=float, default=0.0001, metavar='LR', help='warmup learning rate (default: 0.0001)')

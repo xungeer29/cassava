@@ -77,20 +77,21 @@ class CoolSystem(pl.LightningModule):
         print(f'Those layers are freezed: {freezed}' if len(freezed) > 0 else 'no layers was freezed.')
 
         lr_scale = self.hparams.lr / self.hparams.warmup_lr if self.hparams.warmup else 1
-        self.hparams.lr /= lr_scale
-        self.optimizer = create_optimizer(self.hparams, self.model)
-        # self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
-        #                             betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
-        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
+        lr = self.hparams.lr / lr_scale
+        # self.optimizer = create_optimizer(self.hparams, self.model)
+        self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=lr, 
+                                    betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
+        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.lr, 
         #                             momentum=0.9, nesterov=True eps=1e-08, weight_decay=self.hparams.weight_decay)
         # self.scheduler = WarmRestart(self.optimizer, T_max=self.hparams.T_max, T_mult=1, eta_min=1e-6)
-        # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
-        #                         T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
+        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
+                                T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
         # self.scheduler, num_epochs = create_scheduler(self.hparams, self.optimizer)
-        self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10*len(self.train_dataloader.dataloader), gamma=0.1, last_epoch=-1)
+        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10*len(self.train_dataloader.dataloader), gamma=0.1, last_epoch=-1)
         if self.hparams.warmup:
             self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=lr_scale, 
-                                            total_epoch=len(self.train_dataloader.dataloader)*1, after_scheduler=self.scheduler)
+                                            total_epoch=len(self.train_dataloader.dataloader)*self.hparams.warmup_epochs, 
+                                            after_scheduler=self.scheduler)
         
         return [self.optimizer], [{'scheduler': self.scheduler, 'interval': 'step'}] # step
 
@@ -269,7 +270,7 @@ if __name__ == "__main__":
     data, test_data = load_data(logger, frac=frac)
 
     # Generate transforms
-    transforms = generate_transforms(hparams.image_size)
+    transforms = generate_transforms(hparams)
 
     # Do cross validation
     valid_roc_auc_scores = []

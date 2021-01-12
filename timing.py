@@ -27,7 +27,7 @@ while(1):
     if flag:
         break
 
-cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b4_ns --lr 1e-5 --max_epochs 10 -tbs 8 --weight_decay 1e-6 --onehot --version v55-512 --ricap 0 --mixup 0 --cutmix 0 --snapmix 0 --fmix 0 --smooth 0.7 --sampler common'
+cmd = f'CUDA_VISIBLE_DEVICES={i} python train.py --backbone tf_efficientnet_b4_ns --lr 1e-4 --warmup-lr 1e-6 --warmup --epochs 10 -tbs 8 --weight-decay 1e-6 --onehot --version v60-no_hue_brightness_rot --ricap 0 --mixup 0 --cutmix 0 --snapmix 0 --fmix 0 --smooth 0.7 --sampler common'
 print(cmd)
 os.system(cmd)
 

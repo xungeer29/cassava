@@ -18,6 +18,8 @@ import argparse
 import time
 import yaml
 import os
+import cv2
+import numpy as np
 import logging
 from collections import OrderedDict
 from contextlib import suppress
@@ -38,6 +40,29 @@ from timm.utils import ApexScaler, NativeScaler
 # from timm.data import LoadImagesAndLabels,preprocess,LoadImagesAndLabelsV2
 # from timm.utils import Visualizer
 # from timm.data import get_train_transforms,get_valid_transforms
+
+from albumentations import (
+    Compose,
+    GaussianBlur,
+    HorizontalFlip,
+    MedianBlur,
+    MotionBlur,
+    Normalize,
+    OneOf,
+    RandomBrightness,
+    RandomBrightnessContrast,
+    RandomContrast,
+    Resize,
+    RandomResizedCrop,
+    ShiftScaleRotate,
+    VerticalFlip,
+    Transpose,
+    HueSaturationValue,
+    CoarseDropout,
+    Cutout,
+)
+from albumentations.pytorch import ToTensorV2
+
 try:
     from apex import amp
     from apex.parallel import DistributedDataParallel as ApexDDP
@@ -69,9 +94,9 @@ parser.add_argument('--data',default='data/cassava/train_images',type=str,
                     metavar='DIR',help='path to dataset')
 parser.add_argument('--model', default='tf_efficientnet_b4_ns', type=str, metavar='MODEL',
                     help='Name of model to train (default: "countception"')
-parser.add_argument('--pretrained', action='store_true', default=False,
+parser.add_argument('--pretrained', action='store_true', default=True,
                     help='Start with pretrained version of specified network (if avail)')
-parser.add_argument('--initial-checkpoint', default=None, # '/media/ExtDiskB/Hanson/code/kaggle/cassave/pytorch-image-models-master/preweights/tf_efficientnet_b4_ns-d6313a46.pth'
+parser.add_argument('--initial-checkpoint', default='', # /home/gaofuxun/.cache/torch/checkpoints/tf_efficientnet_b4_ns-d6313a46.pth
                     type=str, metavar='PATH',help='Initialize model from this checkpoint (default: none)')
 parser.add_argument('--resume', default='', type=str, metavar='PATH',
                     help='Resume full model and optimizer state from checkpoint (default: none)')
@@ -91,7 +116,7 @@ parser.add_argument('--std', type=float, nargs='+', default=None, metavar='STD',
                     help='Override std deviation of of dataset')
 parser.add_argument('--interpolation', default='', type=str, metavar='NAME',
                     help='Image resize interpolation type (overrides model)')
-parser.add_argument('-b', '--batch-size', type=int, default=14, metavar='N',
+parser.add_argument('-b', '--batch-size', type=int, default=14, metavar='N', # 14
                     help='input batch size for training (default: 32)')
 parser.add_argument('-vb', '--validation-batch-size-multiplier', type=int, default=1, metavar='N',
                     help='ratio of validation batch size to training batch size (default: 1)')
@@ -235,7 +260,7 @@ parser.add_argument('--save-images', action='store_true', default=False,
                     help='save images of input bathes every log interval for debugging')
 parser.add_argument('--amp', action='store_true', default=False,
                     help='use NVIDIA Apex AMP or Native AMP for mixed precision training')
-parser.add_argument('--apex-amp', action='store_true', default=True,
+parser.add_argument('--apex-amp', action='store_true', default=False, # True
                     help='Use NVIDIA Apex AMP mixed precision')
 parser.add_argument('--native-amp', action='store_true', default=False,
                     help='Use Native Torch AMP mixed precision')
@@ -275,14 +300,8 @@ def _parse_args():
     return args, args_text
 
 
-def adjust_learning_rate(optimizer, epoch, args):
-    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    lr = args.lr * (0.1 ** (epoch // 30))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-
 class LoadImagesAndLabelsV2(Dataset):
-    def __init__(self, data, root, soft_labels_filename=None, transforms=None, smooth=1.0, sampler='common', use2019=False):
+    def __init__(self, data, root, soft_labels_filename="", transforms=None, smooth=1.0, sampler='common', use2019=True):
         self.data = data
         self.root = root
         self.transforms = transforms
@@ -302,10 +321,19 @@ class LoadImagesAndLabelsV2(Dataset):
     def __getitem__(self, index):
         image = cv2.cvtColor(cv2.imread(os.path.join(self.root, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
         label = self.data.iloc[index, 1:].values.astype(np.float)
+        if label.shape[0] > 1:
+            label = np.argmax(label, axis=0).astype(np.float)
 
         # Do data augmentation
         if self.transforms is not None:
             image = self.transforms(image=image)["image"].transpose(2, 0, 1)
+        else:
+            mean=[0.485, 0.456, 0.406]
+            std=[0.229, 0.224, 0.225]
+            image = Compose([Resize(height=512, width=512),
+                            Normalize(mean=mean, std=std, max_pixel_value=255.0, p=1.0),
+                            # ToTensorV2(p=1.0),
+                            ])(image=image)["image"].transpose(2, 0, 1)
 
         # Soft label
         if self.soft_labels is not None:
@@ -315,7 +343,8 @@ class LoadImagesAndLabelsV2(Dataset):
                 + (self.soft_labels.iloc[index, 1:].values * 0.3).astype(np.float)
             )
         else:
-            label = torch.FloatTensor(label)
+            pass
+            # label = torch.FloatTensor(label)
             # label smooth
             # label = label*(self.smooth-(1-self.smooth)/(5-1)) + (1-self.smooth)/(5-1)
 
@@ -324,32 +353,12 @@ class LoadImagesAndLabelsV2(Dataset):
     def __len__(self):
         return len(self.data)
 
-
-def generate_transforms(image_size):
-    train_transform = Compose([
-            RandomResizedCrop(int(image_size[0]), int(image_size[1]), scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333)),
-            Transpose(p=0.5),
-            HorizontalFlip(p=0.5),
-            VerticalFlip(p=0.5),
-            ShiftScaleRotate(p=0.5),
-            HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
-            RandomBrightnessContrast(brightness_limit=(-0.1,0.1), contrast_limit=(-0.1, 0.1), p=0.5),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
-            # CoarseDropout(p=0.5),
-            # Cutout(p=0.5),
-            # ToTensorV2(p=1.0),
-        ], p=1.)
-
-    val_transform = Compose(
-        [
-            Resize(height=int(image_size[0]), width=int(image_size[1])),
-            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0, p=1.0),
-        ]
-    )
-
-    return {"train_transforms": train_transform, "val_transforms": val_transform}
-
-
+def adjust_learning_rate(optimizer, epoch, args):
+    """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
+    lr = args.lr * (0.1 ** (epoch // 30))
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+        
 def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
     setup_default_logging()
     args, args_text = _parse_args()
@@ -358,6 +367,7 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
     args.distributed = False
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
+    print(args.distributed);exit()
     args.device = 'cuda:0'
     args.world_size = 1
     args.rank = 0  # global rank
@@ -513,10 +523,10 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
         _logger.info('Scheduled epochs: {}'.format(num_epochs))
 
     train_data = data_.iloc[train_index, :].reset_index(drop=True)
-    dataset_train = LoadImagesAndLabelsV2(image_ids = train_data,baseImgPath = args.data)
+    dataset_train = LoadImagesAndLabelsV2(data = train_data,root = args.data)
 
     val_data = data_.iloc[val_index, :].reset_index(drop=True) 
-    dataset_eval = LoadImagesAndLabelsV2(image_ids = val_data,baseImgPath = args.data)
+    dataset_eval = LoadImagesAndLabelsV2(data = val_data,root = args.data)
 
     # setup mixup / cutmix
     collate_fn = None
@@ -542,7 +552,6 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
     if args.no_aug or not train_interpolation:
         train_interpolation = data_config['interpolation']
     # train_trans = get_train_transforms(args)
-    train_trans = get_train_transforms(args)
     loader_train = create_loader(
         dataset_train,
         input_size=data_config['input_size'],
@@ -569,10 +578,10 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
         collate_fn=collate_fn,
         pin_memory=args.pin_mem,
         use_multi_epochs_loader=args.use_multi_epochs_loader,
-        transform=train_trans
+        # transform=train_trans
     )
 
-    valid_trans = get_valid_transforms(args)
+    # valid_trans = get_valid_transforms(args)
     loader_eval = create_loader(
         dataset_eval,
         input_size=data_config['input_size'],
@@ -586,7 +595,7 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
         distributed=args.distributed,
         crop_pct=data_config['crop_pct'],
         pin_memory=args.pin_mem,
-        transform=valid_trans
+        # transform=valid_trans
     )
 
     # setup loss function
@@ -623,7 +632,7 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
             checkpoint_dir=output_dir, recovery_dir=output_dir, decreasing=decreasing)
         with open(os.path.join(output_dir, 'args.yaml'), 'w') as f:
             f.write(args_text)
-        vis = Visualizer(env=args.output)
+        # vis = Visualizer(env=args.output)
 
     try:
         for epoch in range(start_epoch, num_epochs):
@@ -849,6 +858,6 @@ if __name__ == '__main__':
     setup_default_logging()
     args, args_text = _parse_args()
     folds = KFold(n_splits=5, shuffle=True, random_state=args.seed)
-    data_ = pd.read_csv('data/cassava/train_raw.csv') # data/cassava/train_images
+    data_ = pd.read_csv('data/cassava/train.csv')
     for fold_i, (train_index, val_index) in enumerate(folds.split(data_)):
         main(fold_i, data_, train_index, val_index)

@@ -65,12 +65,6 @@ class PlantDataset(Dataset):
         else:
             self.soft_labels = pd.read_csv(soft_labels_filename)
 
-        # weights
-        labels = [np.argmax(label) for label in self.data.iloc[:, 1:].values.astype(np.float)]
-        label2num = {0: labels.count(0), 1: labels.count(1), 2: labels.count(2), 3: labels.count(3), 4: labels.count(4)}
-        self.weights = [(len(labels)-label2num[label])/len(labels) for label in labels]
-        self.labels = labels
-
         # id2names
         self.id2names = {0: [], 1: [], 2:[], 3:[], 4:[]}
         for name, label in zip(self.data.iloc[:, 0], self.data.iloc[:, 1:].values.astype(np.float)):
@@ -82,9 +76,17 @@ class PlantDataset(Dataset):
             nums.append(len(names))
         W = sum(nums)/np.array(nums)
         self.probs = W/np.sum(W)
-        self.probs = [0.3, 0.2, 0.2, 0.1, 0.2]
+        self.probs = [0.2, 0.2, 0.2, 0.2, 0.2]
         if self.sampler == 'balance':
             print(f'sampler prob: {self.probs}')
+
+        # weights
+        labels = [np.argmax(label) for label in self.data.iloc[:, 1:].values.astype(np.float)]
+        label2num = {0: labels.count(0), 1: labels.count(1), 2: labels.count(2), 3: labels.count(3), 4: labels.count(4)}
+        # self.weights = [(len(labels)-label2num[label])/len(labels) for label in labels]
+        label2prob = [0.33, 0.2, 0.2, 0.07, 0.2]
+        self.weights = [label2prob[int(label)] for label in labels]
+        self.labels = labels
 
     def __getitem__(self, index):
         start_time = time()
@@ -132,7 +134,13 @@ class PlantDataset(Dataset):
         return len(self.data)
 
 
-def generate_transforms(image_size):
+def generate_transforms(hparams):
+    image_size = hparams.image_size
+    mean=[0.485, 0.456, 0.406]
+    std=[0.229, 0.224, 0.225]
+    if 'vit' in hparams.backbone:
+        mean=[0.5, 0.5, 0.5]
+        std=[0.5, 0.5, 0.5]
 
     # train_transform = Compose(
     #     [
@@ -164,16 +172,16 @@ def generate_transforms(image_size):
             ShiftScaleRotate(p=0.5),
             HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
             RandomBrightnessContrast(brightness_limit=(-0.1,0.1), contrast_limit=(-0.1, 0.1), p=0.5),
-            Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225], max_pixel_value=255.0, p=1.0),
-            # CoarseDropout(p=0.5),
-            # Cutout(p=0.5),
+            Normalize(mean=mean, std=std, max_pixel_value=255.0, p=1.0),
+            CoarseDropout(p=0.5),
+            Cutout(p=0.5),
             # ToTensorV2(p=1.0),
         ], p=1.)
 
     val_transform = Compose(
         [
             Resize(height=int(image_size[0]), width=int(image_size[1])),
-            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0, p=1.0),
+            Normalize(mean=mean, std=std, max_pixel_value=255.0, p=1.0),
         ]
     )
 
@@ -189,14 +197,15 @@ def generate_dataloaders(hparams, train_data, val_data, transforms):
         data=val_data, transforms=transforms["val_transforms"], soft_labels_filename=hparams.soft_labels_filename,
         smooth=hparams.smooth, sampler='common', use2019=False
     )
-    # sampler = WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset.weights))
+    sampler = None
+    sampler = WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset.weights))
     # sampler = BalanceClassSampler(train_dataset.labels, mode='downsampling')
     # sampler = DynamicBalanceClassSampler(train_dataset.labels, exp_lambda=0.9, start_epoch=0, mode='downsampling')
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=hparams.train_batch_size,
-        shuffle=True, # True,
-        sampler=None, #  None
+        shuffle=True if sampler is None else False, # True,
+        sampler=sampler, #  None
         num_workers=hparams.num_workers,
         pin_memory=True,
         drop_last=True,
