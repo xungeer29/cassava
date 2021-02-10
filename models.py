@@ -66,28 +66,13 @@ class CassavaModelTimm(nn.Module):
         if 'efficientnet' in model_arch: # [efficientnet_b0-8, 'tf_efficientnet_b0-8, b0-8_ap, b0-8_ns, cc_b0_4e, b0_8e, b1_8e, el, em, es, l2_ns, l2_ns_475, lite0-4]
             n_features = self.model.classifier.in_features
             self.model.classifier = nn.Linear(n_features, n_class)
-            # self.model.classifier = nn.Sequential(
-            #     nn.Dropout(0.3),
-            #     #nn.Linear(n_features, hidden_size,bias=True), nn.ELU(),
-            #     nn.Linear(n_features, n_class, bias=True)
-            # )
         elif 'regnet' in model_arch: # [regnetx/y_002, 004, 006, 008, 016, 032, 040, 064, 080, 120, 160， 320]
             n_features = self.model.head.fc.in_features
             self.model.head.fc = nn.Linear(n_features, n_class)
-            # self.model.head = nn.Sequential(
-            #     nn.Dropout(0.3),
-            #     #nn.Linear(n_features, hidden_size,bias=True), nn.ELU(),
-            #     nn.Linear(n_features, n_class, bias=True)
-            # )
         elif 'seresnext' in model_arch: # [seresnext26_32x4d, 26d_32x4d, 26t_32x4d, 26tn_32x4d, 50_32x4d',]
             n_features = self.model.fc.in_features
             self.model.fc = nn.Linear(n_features, n_class)
-            # self.model.last_linear = nn.Sequential(
-            #     nn.Dropout(0.3),
-            #     #nn.Linear(n_features, hidden_size,bias=True), nn.ELU(),
-            #     nn.Linear(n_features, n_class, bias=True)
-            # )
-        elif 'vit' in model_arch: # [vit_base_patch16_384, ]
+        elif 'vit' in model_arch: # [vit_base_patch16_384, vit_large_patch16_384, vit_small_patch16_224, ]
             n_features = self.model.head.in_features
             self.model.head = nn.Linear(n_features, n_class)
         else:

@@ -20,6 +20,7 @@ import yaml
 import os
 import cv2
 import numpy as np
+from PIL import Image
 import logging
 from collections import OrderedDict
 from contextlib import suppress
@@ -90,7 +91,7 @@ parser.add_argument('-c', '--config', default='', type=str, metavar='FILE',
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 
 # Dataset / Model parameters
-parser.add_argument('--data',default='data/cassava/train_images',type=str,
+parser.add_argument('--data',default='data/train_images',type=str,
                     metavar='DIR',help='path to dataset')
 parser.add_argument('--model', default='tf_efficientnet_b4_ns', type=str, metavar='MODEL',
                     help='Name of model to train (default: "countception"')
@@ -250,7 +251,7 @@ parser.add_argument('--model-ema-decay', type=float, default=0.9998,
 # Misc
 parser.add_argument('--seed', type=int, default=42, metavar='S',
                     help='random seed (default: 42)')
-parser.add_argument('--log-interval', type=int, default=50, metavar='N',
+parser.add_argument('--log-interval', type=int, default=500, metavar='N',
                     help='how many batches to wait before logging training status')
 parser.add_argument('--recovery-interval', type=int, default=0, metavar='N',
                     help='how many batches to wait before writing recovery checkpoint')
@@ -301,15 +302,15 @@ def _parse_args():
 
 
 class LoadImagesAndLabelsV2(Dataset):
-    def __init__(self, data, root, soft_labels_filename="", transforms=None, smooth=1.0, sampler='common', use2019=True):
+    def __init__(self, data, root, soft_labels_filename="", transform=None, smooth=1.0, sampler='common', use2019=True):
         self.data = data
         self.root = root
-        self.transforms = transforms
+        self.transform = transform
         self.smooth = smooth
         self.sampler = sampler
 
         if use2019:
-            df_2019 = pd.read_csv('data/cassava/train_2019.csv')
+            df_2019 = pd.read_csv('data/train_2019.csv')
             self.data = pd.concat([self.data, df_2019], axis=0)
 
         if soft_labels_filename == "":
@@ -319,15 +320,18 @@ class LoadImagesAndLabelsV2(Dataset):
             self.soft_labels = pd.read_csv(soft_labels_filename)
 
     def __getitem__(self, index):
-        image = cv2.cvtColor(cv2.imread(os.path.join(self.root, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
+        # image = cv2.cvtColor(cv2.imread(os.path.join(self.root, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
+        image = Image.open(os.path.join(self.root, self.data.iloc[index, 0])).convert('RGB')
         label = self.data.iloc[index, 1:].values.astype(np.float)
         if label.shape[0] > 1:
             label = np.argmax(label, axis=0).astype(np.float)
 
         # Do data augmentation
-        if self.transforms is not None:
-            image = self.transforms(image=image)["image"].transpose(2, 0, 1)
+        if self.transform is not None:
+            # image = self.transforms(image=image)["image"].transpose(2, 0, 1)
+            image = self.transform(image)
         else:
+            print('transform is None' * 10)
             mean=[0.485, 0.456, 0.406]
             std=[0.229, 0.224, 0.225]
             image = Compose([Resize(height=512, width=512),
@@ -367,7 +371,6 @@ def main(fold_i = 0, data_ = None, train_index = None, val_index = None):
     args.distributed = False
     if 'WORLD_SIZE' in os.environ:
         args.distributed = int(os.environ['WORLD_SIZE']) > 1
-    print(args.distributed);exit()
     args.device = 'cuda:0'
     args.world_size = 1
     args.rank = 0  # global rank
@@ -820,7 +823,7 @@ def validate(model, loader, loss_fn, args, amp_autocast=suppress, log_suffix='')
                 output = output.unfold(0, reduce_factor, reduce_factor).mean(dim=2)
                 target = target[0:target.size(0):reduce_factor]
 
-            loss = loss_fn(output, target)
+            loss = loss_fn(output, target.long())
             acc1, acc5 = accuracy(output, target, topk=(1, 5))
 
             if args.distributed:
@@ -858,6 +861,7 @@ if __name__ == '__main__':
     setup_default_logging()
     args, args_text = _parse_args()
     folds = KFold(n_splits=5, shuffle=True, random_state=args.seed)
-    data_ = pd.read_csv('data/cassava/train.csv')
+    data_ = pd.read_csv('data/train.csv')
     for fold_i, (train_index, val_index) in enumerate(folds.split(data_)):
+        print(f'fold-{fold_i}')
         main(fold_i, data_, train_index, val_index)

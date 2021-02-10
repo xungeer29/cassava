@@ -40,6 +40,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from catalyst.data.sampler import BalanceClassSampler, DynamicBalanceClassSampler
 from scipy.stats import beta
+from tqdm import tqdm
 
 # User defined libraries
 from utils import IMAGE_FOLDER, IMG_SHAPE
@@ -49,14 +50,17 @@ class PlantDataset(Dataset):
     """ Do normal training
     """
 
-    def __init__(self, data, soft_labels_filename=None, transforms=None, smooth=1.0, sampler='common', use2019=False):
+    def __init__(self, data, soft_labels_filename=None, transforms=None, smooth=1.0, sampler='common', use2019=False, mode='train', cache=True):
         self.data = data
         self.transforms = transforms
         self.smooth = smooth
         self.sampler = sampler
+        self.use2019 = use2019
+        self.mode = mode
+        self.cache = cache
 
         if use2019:
-            df_2019 = pd.read_csv('data/cassava/train_2019.csv')
+            df_2019 = pd.read_csv('data/train_2019.csv')
             self.data = pd.concat([self.data, df_2019], axis=0)
 
         if soft_labels_filename == "":
@@ -88,12 +92,30 @@ class PlantDataset(Dataset):
         self.weights = [label2prob[int(label)] for label in labels]
         self.labels = labels
 
+        if self.cache:
+            self.cache_data = self.cache_images()
+
+    def cache_images(self):
+        cache = {}
+        print(f'load {self.mode} data to memory:')
+        for i in tqdm(range(len(self.data))):
+            image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, self.data.iloc[i, 0])), cv2.COLOR_BGR2RGB)
+            label = self.data.iloc[i, 1:].values.astype(np.float)
+            cache[i] = {'image': image, 'label': label}
+
+        return cache
+            
     def __getitem__(self, index):
         start_time = time()
         # commom sampler
         if self.sampler == 'common':
-            image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
-            label = self.data.iloc[index, 1:].values.astype(np.float)
+            if self.cache:
+                image = self.cache_data[index]['image']
+                label = self.cache_data[index]['label']
+            else:
+                image = cv2.cvtColor(cv2.imread(os.path.join(IMAGE_FOLDER, self.data.iloc[index, 0])), cv2.COLOR_BGR2RGB)
+                label = self.data.iloc[index, 1:].values.astype(np.float)
+            
         # balance sampler
         elif self.sampler == 'balance':
             prob = np.random.uniform()
@@ -142,39 +164,17 @@ def generate_transforms(hparams):
         mean=[0.5, 0.5, 0.5]
         std=[0.5, 0.5, 0.5]
 
-    # train_transform = Compose(
-    #     [
-    #         Resize(height=int(image_size[0]), width=int(image_size[1])),
-    #         OneOf([RandomBrightness(limit=0.1, p=1), RandomContrast(limit=0.1, p=1)]),
-    #         OneOf([MotionBlur(blur_limit=3), MedianBlur(blur_limit=3), GaussianBlur(blur_limit=3)], p=0.5),
-    #         VerticalFlip(p=0.5),
-    #         HorizontalFlip(p=0.5),
-    #         # Transpose(p=0.5),
-    #         HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
-    #         CoarseDropout(p=0.5),
-    #         Cutout(p=0.5),
-    #         ShiftScaleRotate(
-    #             shift_limit=0.2,
-    #             scale_limit=0.2,
-    #             rotate_limit=20,
-    #             interpolation=cv2.INTER_LINEAR,
-    #             border_mode=cv2.BORDER_REFLECT_101,
-    #             p=1,
-    #         ),
-    #         Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225), max_pixel_value=255.0, p=1.0),
-    #     ]
-    # )
     train_transform = Compose([
-            RandomResizedCrop(int(image_size[0]), int(image_size[1]), scale=(0.08, 1.0), ratio=(0.75, 1.3333333333333333)),
-            Transpose(p=0.5),
-            HorizontalFlip(p=0.5),
-            VerticalFlip(p=0.5),
-            ShiftScaleRotate(p=0.5),
-            HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=0.5),
-            RandomBrightnessContrast(brightness_limit=(-0.1,0.1), contrast_limit=(-0.1, 0.1), p=0.5),
+            RandomResizedCrop(int(image_size[0]), int(image_size[1])),
+            Transpose(p=hparams.ptranspose),
+            HorizontalFlip(p=hparams.phflip),
+            VerticalFlip(p=hparams.pvflip),
+            ShiftScaleRotate(p=hparams.pshiftscalerotate),
+            HueSaturationValue(hue_shift_limit=0.2, sat_shift_limit=0.2, val_shift_limit=0.2, p=hparams.phuesaturationvalue),
+            RandomBrightnessContrast(brightness_limit=(-0.1,0.1), contrast_limit=(-0.1, 0.1), p=hparams.prandombrightnesscontrast),
             Normalize(mean=mean, std=std, max_pixel_value=255.0, p=1.0),
-            CoarseDropout(p=0.5),
-            Cutout(p=0.5),
+            CoarseDropout(p=hparams.pcoarsedropout),
+            Cutout(p=hparams.pcutout),
             # ToTensorV2(p=1.0),
         ], p=1.)
 
@@ -191,14 +191,14 @@ def generate_transforms(hparams):
 def generate_dataloaders(hparams, train_data, val_data, transforms):
     train_dataset = PlantDataset(
         data=train_data, transforms=transforms["train_transforms"], soft_labels_filename=hparams.soft_labels_filename,
-        smooth=hparams.smooth, sampler=hparams.sampler, use2019=hparams.use2019
+        smooth=hparams.smooth, sampler=hparams.sampler, use2019=hparams.use2019, mode='train', cache=hparams.cache
     )
     val_dataset = PlantDataset(
         data=val_data, transforms=transforms["val_transforms"], soft_labels_filename=hparams.soft_labels_filename,
-        smooth=hparams.smooth, sampler='common', use2019=False
+        smooth=hparams.smooth, sampler='common', use2019=False, mode='val', cache=hparams.cache
     )
     sampler = None
-    sampler = WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset.weights))
+    # sampler = WeightedRandomSampler(weights=train_dataset.weights, num_samples=len(train_dataset.weights))
     # sampler = BalanceClassSampler(train_dataset.labels, mode='downsampling')
     # sampler = DynamicBalanceClassSampler(train_dataset.labels, exp_lambda=0.9, start_epoch=0, mode='downsampling')
     train_dataloader = DataLoader(

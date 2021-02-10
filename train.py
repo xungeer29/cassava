@@ -6,6 +6,7 @@
 import os
 import gc
 import math
+import random
 import numpy as np
 from time import time
 # https://github.com/jettify/pytorch-optimizer
@@ -18,7 +19,7 @@ from timm.optim import create_optimizer
 from timm.scheduler import create_scheduler
 
 import torch
-from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, classification_report
+from sklearn.metrics import roc_auc_score, accuracy_score, f1_score, classification_report, confusion_matrix
 from sklearn.model_selection import KFold, StratifiedKFold
 
 # User defined libraries
@@ -45,7 +46,7 @@ class CoolSystem(pl.LightningModule):
         self.logger_kun = init_logger("kun_in", f'{hparams.log_dir}/{hparams.version}')
         self.fmix = FMix(decay_power=self.hparams.fmix_delta, alpha=self.hparams.fmix_beta, 
                         size=(int(self.hparams.image_size[1]), self.hparams.image_size[1]), max_soft=0.0, reformulate=False)
-
+        
     def forward(self, x):
         return self.model(x)
 
@@ -77,27 +78,57 @@ class CoolSystem(pl.LightningModule):
         print(f'Those layers are freezed: {freezed}' if len(freezed) > 0 else 'no layers was freezed.')
 
         lr_scale = self.hparams.lr / self.hparams.warmup_lr if self.hparams.warmup else 1
-        lr = self.hparams.lr / lr_scale
-        # self.optimizer = create_optimizer(self.hparams, self.model)
-        self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=lr, 
-                                    betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
-        # self.optimizer = torch.optim.SGD(filter(lambda p: p.requires_grad, self.parameters()), lr=self.lr, 
-        #                             momentum=0.9, nesterov=True eps=1e-08, weight_decay=self.hparams.weight_decay)
+        self.hparams.lr = self.hparams.lr / lr_scale
+        self.optimizer = create_optimizer(self.hparams, self.model) # sgd
+        # self.optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
+        #                             betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
+        # self.optimizer = optim.RAdam(filter(lambda p: p.requires_grad, self.parameters()), lr=self.hparams.lr, 
+        #                         betas=(0.9, 0.999), eps=1e-08, weight_decay=self.hparams.weight_decay)
         # self.scheduler = WarmRestart(self.optimizer, T_max=self.hparams.T_max, T_mult=1, eta_min=1e-6)
-        self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
-                                T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=1e-6, last_epoch=-1)
-        # self.scheduler, num_epochs = create_scheduler(self.hparams, self.optimizer)
-        # self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=10*len(self.train_dataloader.dataloader), gamma=0.1, last_epoch=-1)
+        self.hparams.lr = self.hparams.lr * lr_scale
+        if self.hparams.sched == 'step':
+            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.hparams.decay_epochs*len(self.train_dataloader.dataloader), 
+                                gamma=self.hparams.decay_rate, last_epoch=-1)
+        elif self.hparams.sched == 'cosine':
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(self.optimizer, 
+                                T_0=self.hparams.T_max*len(self.train_dataloader.dataloader), T_mult=1, eta_min=self.hparams.min_lr, last_epoch=-1)
         if self.hparams.warmup:
             self.scheduler = GradualWarmupScheduler(self.optimizer, multiplier=lr_scale, 
                                             total_epoch=len(self.train_dataloader.dataloader)*self.hparams.warmup_epochs, 
                                             after_scheduler=self.scheduler)
-        
+        # self.total_batches = len(self.train_dataloader.dataloader) * self.hparams.T_max if self.hparams.sched == 'cosine' else len(self.train_dataloader.dataloader) * self.hparams.epochs
+        self.total_batches = len(self.train_dataloader.dataloader) * self.hparams.epochs
+
         return [self.optimizer], [{'scheduler': self.scheduler, 'interval': 'step'}] # step
 
     def training_step(self, batch, batch_idx):
         step_start_time = time()
         images, labels, data_load_time = batch
+
+        # # Mixup Without Hesitation.
+        # mask = random.random()
+        # cur_batch_idx = batch_idx + self.current_epoch*len(self.train_dataloader.dataloader)
+        # if cur_batch_idx >= 0.8 * self.total_batches:
+        #     # threshold = math.cos( math.pi * (epoch - 150) / ((200 - 150) * 2))
+        #     threshold = (self.total_batches - cur_batch_idx) / (0.1*self.total_batches)
+        #     # threshold = 1.0 - math.cos( math.pi * (200 - epoch) / ((200 - 150) * 2))
+        #     if mask < threshold:
+        #         if np.random.uniform(0, 1) < 0.5:
+        #             images, labels_a, labels_b, lam = mixup_data(images, labels, self.hparams.mixup_beta)
+        #         else:
+        #             images, labels_a, labels_b, lam = cutmix(images, labels, beta=self.hparams.cutmix_beta)
+        # elif cur_batch_idx >= 0.5 * self.total_batches: # 0.6
+        #     if cur_batch_idx % 2 == 0:
+        #         if np.random.uniform(0, 1) < 0.5:
+        #             images, labels_a, labels_b, lam = mixup_data(images, labels, self.hparams.mixup_beta)
+        #         else:
+        #             images, labels_a, labels_b, lam = cutmix(images, labels, beta=self.hparams.cutmix_beta)
+        # else:
+        #     if np.random.uniform(0, 1) < 0.5:
+        #         images, labels_a, labels_b, lam = mixup_data(images, labels, self.hparams.mixup_beta)
+        #     else:
+        #         images, labels_a, labels_b, lam = cutmix(images, labels, beta=self.hparams.cutmix_beta)
+
         prob = np.random.uniform(0, 1)
         if prob < self.hparams.mixup:
             images, labels_a, labels_b, lam = mixup_data(images, labels, self.hparams.mixup_beta)
@@ -116,6 +147,22 @@ class CoolSystem(pl.LightningModule):
 
         if not self.hparams.onehot: # onehot-->hardlabel for torch.nn.CrossEntropyLoss()
             labels = labels.topk(1, dim=1)[1].squeeze(1)
+        
+        # # Mixup Without Hesitation.
+        # if cur_batch_idx >= 0.8 * self.total_batches:
+        #     if mask < threshold:
+        #         loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
+        #     else:
+        #         loss = self.criterion(scores, labels)
+        # elif cur_batch_idx >= 0.5 * self.total_batches:
+        #     if cur_batch_idx % 2 == 0:
+        #         loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
+        #     else:
+        #         loss = self.criterion(scores, labels)
+        # else:
+        #     loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
+
+        # common mixup
         if prob < self.hparams.mixup:
             loss = lam * self.criterion(scores, labels_a) + (1 - lam) * self.criterion(scores, labels_b)
         elif prob < (self.hparams.mixup + self.hparams.ricap):
@@ -128,8 +175,9 @@ class CoolSystem(pl.LightningModule):
             loss = torch.mean(lam_a * self.criterion(scores, labels_a, True) + lam_b * self.criterion(scores, labels_b, snapmix=True))
         else:
             ohem = True if self.current_epoch > 5 else False
-            loss = self.criterion(scores, labels, ohem=False)
-        # loss = self.criterion(scores, labels.squeeze(1).long())
+            # loss = self.criterion(scores, labels, ohem=False)
+            loss = self.criterion(scores, labels)
+        loss = self.criterion(scores, labels.squeeze(1).long())
 
         data_load_time = torch.sum(data_load_time)
 
@@ -218,7 +266,10 @@ class CoolSystem(pl.LightningModule):
         labels_all = torch.round(torch.cat([output["labels"] for output in outputs]).cpu())
         scores_all = torch.softmax(scores_all, -1)
 
-        val_roc_auc = roc_auc_score(labels_all, scores_all)
+        try:
+            val_roc_auc = roc_auc_score(labels_all, scores_all)
+        except:
+            val_roc_auc = 0
         values, y_pred = scores_all.topk(1, dim=1)
         values, labels_all = labels_all.topk(1, dim=1) # one-hot -> hard label
         # print(labels_all.squeeze(1), y_pred.squeeze(1))
@@ -226,8 +277,14 @@ class CoolSystem(pl.LightningModule):
         val_acc = accuracy_score(true, pred)
         val_f1 = f1_score(true, pred, average='weighted') # average=[None, ‘binary’ (default), ‘micro’, ‘macro’, ‘samples’, ‘weighted’]
 
-        names = ["CBB", "CBSD", "CGM", "CMD", "Hea"]
-        val_info = classification_report(true, pred, labels=None, target_names=names, sample_weight=None, digits=2)
+        # names = ["CBB", "CBSD", "CGM", "CMD", "Hea"]
+        # val_info = classification_report(true, pred, labels=None, target_names=names, sample_weight=None, digits=2)
+        confuseM = confusion_matrix(true, pred)
+        val_acc0 = confuseM[0][0]/np.sum(confuseM[0])
+        val_acc1 = confuseM[1][1]/np.sum(confuseM[1])
+        val_acc2 = confuseM[2][2]/np.sum(confuseM[2])
+        val_acc3 = confuseM[3][3]/np.sum(confuseM[3])
+        val_acc4 = confuseM[4][4]/np.sum(confuseM[4])
 
         # terminal logs
         self.logger_kun.info(
@@ -235,22 +292,23 @@ class CoolSystem(pl.LightningModule):
             f"lr : {self.optimizer.param_groups[0]['lr']:.6f} | "
             f"val_loss : {val_loss_mean:.4f} | "
             f"val_acc : {val_acc:.4f} | "
-            f"val_f1 : {val_f1:.4f} | "
-            f"val_roc_auc : {val_roc_auc:.4f} | "
-            # f"data_load_times : {self.data_load_times:.2f} | "
-            # f"batch_run_times : {self.batch_run_times:.2f}"
+            f"val_acc0 : {val_acc0:.4f} | "
+            f"val_acc1 : {val_acc1:.4f} | "
+            f"val_acc2 : {val_acc2:.4f} | "
+            f"val_acc3 : {val_acc3:.4f} | "
+            f"val_acc4 : {val_acc4:.4f}"
         )
-        self.logger_kun.info(f'\n{val_info}')
-        # f"data_load_times : {self.data_load_times:.2f} | "
-        # f"batch_run_times : {self.batch_run_times:.2f}"
-        # must return key -> val_loss
 
-        tb_logs = {'val/Loss': val_loss_mean, 'val/Accuracy': val_acc,
-                    'val/Roc_Auc': val_roc_auc, 'val/F1': val_f1}
-
-        torch.save({'state_dict': self.model.state_dict()}, os.path.join(f'{hparams.log_dir}/{hparams.version}/fold-{fold_i}', f"fold={fold_i}-last.ckpt"))
+        tb_logs = {'val/Loss': val_loss_mean, 'val/Accuracy': val_acc, 'val/Accuracy0': val_acc0, 'val/Accuracy1': val_acc1, 'val/Accuracy2': val_acc2,
+                    'val/Accuracy3': val_acc3, 'val/Accuracy4': val_acc4, 'val/Roc_Auc': val_roc_auc, 'val/F1': val_f1}
+        if val_acc > 0.88:
+            torch.save({'state_dict': self.model.state_dict(), 'acc': val_acc, 'acc0': val_acc0, 
+                        'acc1': val_acc1, 'acc2': val_acc2, 'acc3': val_acc3, 'acc4': val_acc4}, 
+                        os.path.join(f'{hparams.log_dir}/{hparams.version}/fold-{fold_i}', 
+                        f"fold={fold_i}-ep={self.current_epoch}-acc={val_acc:.4f}-acc0={val_acc0:.4f}-acc1={val_acc1:.4f}-acc2={val_acc2:.4f}-acc3={val_acc3:.4f}-acc4={val_acc4:.4f}.ckpt"))
 
         return {"val_loss": val_loss_mean, "val_roc_auc": val_roc_auc, "val_acc": val_acc, "val_f1": val_f1, 'log': tb_logs}
+
 
 
 if __name__ == "__main__":
@@ -266,7 +324,7 @@ if __name__ == "__main__":
     os.system(f'cp -r *.py {hparams.log_dir}/{hparams.version}/')
 
     # Load data
-    frac = 0.1 if hparams.version == 'debug' else 1.0
+    frac = 0.1 if 'debug' in hparams.version else 1.0
     data, test_data = load_data(logger, frac=frac)
 
     # Generate transforms
@@ -283,6 +341,8 @@ if __name__ == "__main__":
              'lightning_logs/v55-384/fold-4/fold=4-last.ckpt']
 
     for fold_i, (train_index, val_index) in enumerate(folds):
+        # if fold_i < 2:
+        #     continue
         ep_start = time()
         hparams.fold_i = fold_i
         train_data = data.iloc[train_index, :].reset_index(drop=True)
@@ -297,22 +357,21 @@ if __name__ == "__main__":
             mode="max",
             filepath=os.path.join(f'{hparams.log_dir}/{hparams.version}/fold-{fold_i}', f"fold={fold_i}" + "-{epoch}-{val_loss:.4f}-{val_acc:.4f}"),
         )
-        early_stop_callback = EarlyStopping(monitor="val_acc", patience=10, mode="max", verbose=True)
+        # early_stop_callback = EarlyStopping(monitor="val_acc", patience=10, mode="max", verbose=True)
 
         tb_logger = TensorBoardLogger(hparams.log_dir, name=hparams.version, version=f'fold-{fold_i}')
-
 
         # Instance Model, Trainer and train model
         model = CoolSystem(hparams)
         # print(model.train_dataloader);exit()
-        # fine-tuning
-        # print(f'loading {ckpts[fold_i]}')
-        # model.model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
+        if hparams.ft:
+            print(f'loading {ckpts[fold_i]}')
+            model.model.load_state_dict(torch.load(ckpts[fold_i])["state_dict"])
         trainer = pl.Trainer(
             gpus=hparams.gpus,
             min_epochs=5,
             max_epochs=hparams.epochs,
-            early_stop_callback=early_stop_callback,
+            # early_stop_callback=early_stop_callback,
             checkpoint_callback=checkpoint_callback,
             progress_bar_refresh_rate=0,
             precision=hparams.precision,
@@ -335,7 +394,7 @@ if __name__ == "__main__":
         ep_end = time()
         tt = ep_end - ep_start
         print(f'Time fold-{fold_i} = {int(tt//3600)}hour {int(tt%3600//60)} min {int(tt%3600%60)} sec')
-        if hparams.version == 'debug' or hparams.fold == 10:
+        if 'debug' in hparams.version or hparams.fold == 10:
             break
         # exit()
     te = time()

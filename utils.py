@@ -17,8 +17,7 @@ import pandas as pd
 import torch
 
 IMG_SHAPE = (600, 800, 3)
-# IMAGE_FOLDER = "/home/public_data_center/kaggle/plant_pathology_2020/images"
-IMAGE_FOLDER = "data/cassava/train_images"
+IMAGE_FOLDER = "data/train_images"
 NPY_FOLDER = "/home/public_data_center/kaggle/plant_pathology_2020/npys"
 LOG_FOLDER = "logs"
 
@@ -72,13 +71,14 @@ def seed_reproducer(seed=2020):
 
 def init_hparams():
     parser = ArgumentParser(add_help=False)
-    parser.add_argument("-backbone", "--backbone", type=str, default="se_resnext50_32x4d") # efficientnet-b1, se_resnet50
-    parser.add_argument("-tbs", "--train_batch_size", type=int, default=32 * 1)
+    parser.add_argument("-b", "--backbone", type=str, default="se_resnext50_32x4d") # efficientnet-b1, se_resnet50  vit_base_patch16_384
+    parser.add_argument("-tbs", "--train_batch_size", type=int, default=8 * 1)
     parser.add_argument("-vbs", "--val_batch_size", type=int, default=32 * 1)
     parser.add_argument("--fold", type=int, default=5)
-    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--num_workers", type=int, default=6)
     parser.add_argument("--image_size", nargs="+", default=[512, 512]) # 320, 416 512
     parser.add_argument("--seed", type=int, default=2020)
+    parser.add_argument('--cache', action='store_true', help='load data to memory')
     
     parser.add_argument("--gpus", nargs="+", default=[0,])  # 输入1 2 3
     parser.add_argument("--precision", type=int, default=32) # 16 or 32
@@ -86,24 +86,26 @@ def init_hparams():
     parser.add_argument("--soft_labels_filename", type=str, default="")
     parser.add_argument("--log_dir", type=str, default="lightning_logs")
     parser.add_argument("--version", type=str, default="debug")
-    parser.add_argument('--freeze', action='store_true', help='freeze layers')
+    parser.add_argument('--ft', action='store_true', help='fine tuning')
 
     # Optimizer parameters
     parser.add_argument('--opt', default='sgd', type=str, metavar='OPTIMIZER', help='Optimizer (default: "sgd"')
     parser.add_argument('--opt-eps', default=None, type=float, metavar='EPSILON', help='Optimizer Epsilon (default: None, use opt default)')
     parser.add_argument('--opt-betas', default=None, type=float, nargs='+', metavar='BETA', help='Optimizer Betas (default: None, use opt default)')
-    parser.add_argument('--momentum', type=float, default=0.9, metavar='M', help='Optimizer momentum (default: 0.9)')
+    parser.add_argument('--momentum', type=float, default=0.9, metavar='M', help='Optimizer momentum (default: 0.9)') # sgd
     parser.add_argument('--weight-decay', type=float, default=0.0001, help='weight decay (default: 0.0001)')
     parser.add_argument('--clip-grad', type=float, default=None, metavar='NORM', help='Clip gradient norm (default: None, no clipping)')
+    parser.add_argument('--freeze', action='store_true', help='freeze layers')
 
     # Learning rate schedule parameters
     parser.add_argument('--epochs', type=int, default=30, metavar='N', help='number of epochs to train (default: 2)')
-    parser.add_argument('--sched', default='step', type=str, metavar='SCHEDULER', help='LR scheduler (default: "step"')
+    parser.add_argument('--sched', default='step', type=str, metavar='SCHEDULER', choices=['step', 'cosine'], help='LR scheduler (default: "step"')
     parser.add_argument('--lr', type=float, default=0.03, metavar='LR', help='learning rate (default: 0.01)') # 1e-4
     parser.add_argument('--warmup-lr', type=float, default=0.0001, metavar='LR', help='warmup learning rate (default: 0.0001)')
-    parser.add_argument('--min-lr', type=float, default=1e-5, metavar='LR', help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
-    parser.add_argument('--warmup-epochs', type=int, default=3, metavar='N', help='epochs to warmup LR, if scheduler supports')
-    parser.add_argument('--patience-epochs', type=int, default=10, metavar='N', help='patience epochs for Plateau LR scheduler (default: 10')
+    parser.add_argument('--min-lr', type=float, default=1e-6, metavar='LR', help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
+    parser.add_argument('--warmup-epochs', type=int, default=1, metavar='N', help='epochs to warmup LR, if scheduler supports')
+    parser.add_argument('--start-epoch', default=None, type=int, metavar='N', help='manual epoch number (useful on restarts)')
+    parser.add_argument('--decay-epochs', type=float, default=8, metavar='N', help='epoch interval to decay LR')
     parser.add_argument('--decay-rate', '--dr', type=float, default=0.1, metavar='RATE', help='LR decay rate (default: 0.1)')
     parser.add_argument("--T_max", type=int, default=10)
     parser.add_argument('--warmup', action='store_true', help='use warmup lr scheduler')
@@ -112,16 +114,25 @@ def init_hparams():
     parser.add_argument("--smooth", type=float, default=0.7, help='label smooth value, 1 is not using label_smooth.') # 0.7
 
     # data augmentations
-    parser.add_argument("--mixup", type=float, default=0.3, help='the prob of mixup, mixup=0 will close mixup.')
+    parser.add_argument("--phflip", type=float, default=0.5, help='the prob of HFlip.')
+    parser.add_argument("--pvflip", type=float, default=0.5, help='the prob of VFlip.')
+    parser.add_argument("--ptranspose", type=float, default=0.5, help='the prob of transpose.')
+    parser.add_argument('-pssr', "--pshiftscalerotate", type=float, default=0.5, help='the prob of ShiftScaleRotate.')
+    parser.add_argument('-phue', "--phuesaturationvalue", type=float, default=0.5, help='the prob of HueSaturationValue.')
+    parser.add_argument('-pbright', "--prandombrightnesscontrast", type=float, default=0.5, help='the prob of RandomBrightnessContrast.')
+    parser.add_argument("--pcoarsedropout", type=float, default=0.5, help='the prob of RandomBrightnessContrast.')
+    parser.add_argument("--pcutout", type=float, default=0.5, help='the prob of RandomBrightnessContrast.')
+    # -------------
+    parser.add_argument("--mixup", type=float, default=0., help='the prob of mixup, mixup=0 will close mixup.')
     parser.add_argument("--mixup_beta", type=float, default=0.4, help='beta in mixup.')
     parser.add_argument("--ricap", type=float, default=0, help='the prob of RICAP, ricap=0 will close RICAP.')
     parser.add_argument("--ricap_beta", type=float, default=0.2, help='beta in ricap.')
-    parser.add_argument("--cutmix", type=float, default=0.3, help='the prob of cutmix, cutmix=0 will close cutmix.')
+    parser.add_argument("--cutmix", type=float, default=0., help='the prob of cutmix, cutmix=0 will close cutmix.')
     parser.add_argument("--cutmix_beta", type=float, default=1.0, help='beta in cutmix.')
     parser.add_argument("--fmix", type=float, default=0, help='the prob of fmix, fmix=0 will close fmix.')
     parser.add_argument("--fmix_beta", type=float, default=1.0, help='beta in fmix.')
     parser.add_argument("--fmix_delta", type=float, default=3, help='decay power (delta) in fmix.') # 
-    parser.add_argument("--snapmix", type=float, default=0.3, help='the prob of snapmix, snapmix=0 will close snapmix.')
+    parser.add_argument("--snapmix", type=float, default=0., help='the prob of snapmix, snapmix=0 will close snapmix.')
     parser.add_argument("--snapmix_beta", type=float, default=5, help='beta in snapmix.')
 
     parser.add_argument('--use2019', action='store_true', help='use 2019 dataset')
@@ -145,7 +156,7 @@ def init_hparams():
 
 
 def load_data(logger, frac=1):
-    data, test_data = pd.read_csv("data/cassava/train.csv"), pd.read_csv("data/cassava/sample_submission.csv")
+    data, test_data = pd.read_csv("data/train.csv"), pd.read_csv("data/sample_submission.csv")
     # Do fast experiment
     if frac < 1:
         logger.info(f"use frac : {frac}")
