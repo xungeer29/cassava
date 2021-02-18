@@ -71,7 +71,7 @@ def seed_reproducer(seed=2020):
 
 def init_hparams():
     parser = ArgumentParser(add_help=False)
-    parser.add_argument("-b", "--backbone", type=str, default="se_resnext50_32x4d") # efficientnet-b1, se_resnet50  vit_base_patch16_384
+    parser.add_argument("-b", "--backbone", type=str, default="tf_efficientnet_b4_ns") # efficientnet-b1, se_resnet50  vit_base_patch16_384
     parser.add_argument("-tbs", "--train_batch_size", type=int, default=8 * 1)
     parser.add_argument("-vbs", "--val_batch_size", type=int, default=32 * 1)
     parser.add_argument("--fold", type=int, default=5)

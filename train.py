@@ -177,7 +177,7 @@ class CoolSystem(pl.LightningModule):
             ohem = True if self.current_epoch > 5 else False
             # loss = self.criterion(scores, labels, ohem=False)
             loss = self.criterion(scores, labels)
-        loss = self.criterion(scores, labels.squeeze(1).long())
+        # loss = self.criterion(scores, labels.squeeze(1).long())
 
         data_load_time = torch.sum(data_load_time)
 
